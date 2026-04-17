@@ -25,7 +25,7 @@ str_find_prev_newline(char *str_start, char *cursor)
 }
 
 static void
-verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list arg_ptr)
+verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
     char *cursor = str + offset;
     char *line_start = str_find_prev_newline(str,       cursor) + 1;
@@ -36,36 +36,36 @@ verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path,
     fprintf(stderr, "%s:%ld:%d:\n", file_path, line_nr, column + 1);
     fprintf(stderr, "  %.*s\n", line_len, line_start);
     fprintf(stderr, "  %*s^\n", column, "");
-    vfprintf(stderr, fmt, arg_ptr);
+    vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
 }
 
 void
 error_at(File *file, size_t offset, size_t line_nr, char *fmt, ...)
 {
-    va_list arg_ptr;
-    va_start(arg_ptr, fmt);
-    verror_at(file->str, file->len, offset, line_nr, file->path, fmt, arg_ptr);
+    va_list ap;
+    va_start(ap, fmt);
+    verror_at(file->str, file->len, offset, line_nr, file->path, fmt, ap);
     exit(1);
 }
 
 void
 error_tok(Token *tok, char *fmt, ...)
 {
-    va_list arg_ptr;
-    va_start(arg_ptr, fmt);
+    va_list ap;
+    va_start(ap, fmt);
     char  *str    = tok->file->str;
     size_t len    = tok->file->len;
     size_t offset = tok->str - str;
-    verror_at(str, len, offset, tok->line_nr, tok->file->path, fmt, arg_ptr);
+    verror_at(str, len, offset, tok->line_nr, tok->file->path, fmt, ap);
     exit(1);
 }
 
 char *tk_kind_str(TokenKind kind) {
     switch (kind) {
+        case TK_EOF: return "EOF";
         case TK_ID:  return "ID";
         case TK_NUM: return "NUM";
-        case TK_EOF: return "EOF";
         default:
             if (ispunct(kind)) return "PUNCT";
             return "str conversion no implemented!";
@@ -182,11 +182,12 @@ tokenize(File *file)
     Token head = {0};
     Token *tok = &head;
 
-    for (size_t i = 0; i < len;) {
-        while (isspace(str[i])) {
+    size_t i = 0;
+    for (; i < len;) {
+        if (isspace(str[i])) {
             if (str[i] == '\n') line_nr += 1;
             ++i;
-            if (i >= len) return head.next;
+            continue;
         }
 
         size_t mark = i;
@@ -214,6 +215,8 @@ tokenize(File *file)
 
         tok = tok->next = new_tok(kind, str + mark, i - mark, file, line_nr);
     }
+
+    tok = tok->next = new_tok(TK_EOF, str + i, 0, file, line_nr);
 
     return head.next;
 }

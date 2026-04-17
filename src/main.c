@@ -1,8 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include "cc.h"
+
+// Reports an error and exit.
+static void error(char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
 
 typedef enum {
     ND_ADD,
@@ -57,22 +67,39 @@ void travers(Node *node, int depth) {
     if (node->rhs) travers(node->rhs, depth + 1);
 }
 
-int main() {
+void expect(Token *tok, TokenKind kind)
+{
+    if (tok->kind != kind)
+        error_tok(tok, "Expected '%s', got '%s'", tk_kind_str(kind), tk_kind_str(tok->kind));
+}
 
-    char *file_path = "example.c";
+int main(int argc, char *argv[]) {
 
-    char buff[1024 * 1024];
-    FILE *file_stream = fopen(file_path, "r");
-    int n = fread(buff, 1, sizeof(buff), file_stream);
-    if ((uint)n >= sizeof(buff)) {
-        fprintf(stderr, "ERROR: Input is too big\n");
-        return 1;
-    }
+    if (argc != 2) error("%s: invalid number of arguments!", argv[0]);
 
-    Token *tok = tokenize(&(File){ .str = buff, .len = n, .path = file_path});
+    Token *tok = tokenize(&(File){ .str = argv[1], .len = strlen(argv[1]), .path = "argv[1]" });
+
+    printf(".global main\n");
+    printf("main:\n");
+
+    expect(tok, TK_NUM);
+    printf("    mov $%.*s, %%rax\n", tok->len, tok->str);
+    tok = tok->next;
+
     for (; tok; tok = tok->next) {
-        printf("%s:\t%.*s\n", tk_kind_str(tok->kind), (int)tok->len, tok->str);
+        // fprintf(stderr, "%s:\t%.*s\n", tk_kind_str(tok->kind), tok->len, tok->str);
+        if (tok->kind == '+') {
+            expect(tok = tok->next, TK_NUM);
+            printf("    add $%.*s, %%rax\n", tok->len, tok->str);
+        } else if (tok->kind == '-') {
+            expect(tok = tok->next, TK_NUM);
+            printf("    sub $%.*s, %%rax\n", tok->len, tok->str);
+        } else if (tok->kind != TK_EOF) {
+            error_tok(tok, "Unexpected token!");
+        }
     }
+
+    printf("    ret\n");
 
     return 0;
 }

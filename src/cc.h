@@ -3,29 +3,30 @@
 
 #include <stddef.h>
 
-//
-// tokenize.c
-//
-
-typedef enum {
-    TK_ID = 128,
-    TK_NUM,
-    TK_EOF,
-} TokenKind;
-char *tk_kind_str(TokenKind kind);
-
 typedef struct {
     char *path;
     char *str;
     size_t len;
 } File;
 
+//
+// tokenize.c
+//
+
+typedef enum {
+    TK_EOF = 0,
+    // skip litteral ascii tokens
+    TK_ID = 128,
+    TK_NUM,
+} TokenKind;
+char *tk_kind_str(TokenKind kind);
+
 typedef struct Token Token;
 struct Token {
     TokenKind kind;
     Token *next;
     char *str;
-    size_t len;
+    int len;
     size_t line_nr;
     File *file;
 };
