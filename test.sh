@@ -1,12 +1,12 @@
 #!/bin/bash
 
-cc=./bin/compiler
+compiler=./bin/compiler
 
 assert() {
   expected="$1"
   input="$2"
 
-  $cc "$input" > tmp.s || exit
+  $compiler "$input" > tmp.s || exit
   gcc -static -o tmp tmp.s
   ./tmp
   actual="$?"

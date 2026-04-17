@@ -4,56 +4,76 @@
 
 #define LEXER_IMPLEMENTATION
 #include "lexer.h"
+typedef enum {
+    ND_ADD,
+    ND_SUB,
+    ND_MUL,
+    ND_DIV,
+    ND_NUM,
+} NodeKind;
 
-void error(Lexer *l, char *fmt, ...) {
-    lexer_report_line(l);
-    va_list arg_ptr;
-    va_start(arg_ptr, fmt);
-    vfprintf(stderr, fmt, arg_ptr);
-    fprintf(stderr, "\n");
-    exit(1);
-}
-
-void expect(Lexer *l, Token tk , TokenKind kind) {
-    if (tk.kind != kind) {
-        error(l, "Expected: '%s', got '%s'",
-            tk_kind_str(kind), tk_kind_str(tk.kind));
+char *nd_kind_str(NodeKind kind) {
+    switch (kind) {
+        case ND_ADD: return "ADD";
+        case ND_SUB: return "SUB";
+        case ND_MUL: return "MUL";
+        case ND_DIV: return "DIV";
+        case ND_NUM: return "NUM";
+        default: return "???";
     }
 }
 
-Token expect_next(Lexer *l, TokenKind kind) {
-    Token tk = lexer_next(l);
-    expect(l, tk, kind);
-    return tk;
+typedef struct Node Node;
+struct Node {
+    NodeKind kind;
+    Node *lhs;
+    Node *rhs;
+
+    int val;
+};
+
+Node *new_node(NodeKind kind) {
+    Node *node = calloc(1, sizeof(*node));
+    node->kind = kind;
+    return node;
 }
 
-int main(int argc, char **argv) {
-  if (argc != 2) {
-    fprintf(stderr, "%s: invalid number of arguments\n", argv[0]);
-    return 1;
-  }
+Node *new_binary(NodeKind kind, Node *lhs, Node *rhs) {
+    Node *node = new_node(kind);
+    node->lhs = lhs;
+    node->rhs = rhs;
+    return node;
+}
 
-  Lexer l;
-  lexer_init(&l, argv[1], strlen(argv[1]), "arg");
+Node *new_num(Token tk) {
+    Node *node = new_node(ND_NUM);
+    node->val = strtoul(tk.str, NULL, 10);
+    return node;
+}
 
-  printf("  .globl main\n");
-  printf("main:\n");
+void travers(Node *node, int depth) {
+    printf("%*.s%s\n", depth, "", nd_kind_str(node->kind));
+    if (node->lhs) travers(node->lhs, depth + 1);
+    if (node->rhs) travers(node->rhs, depth + 1);
+}
 
-  Token tk = expect_next(&l, TK_NUMBER);
-  printf("  mov $%.*s, %%rax\n", tk.len, tk.str);
+int main() {
 
-  for (Token tk = lexer_next(&l); tk.kind != TK_EOF; tk = lexer_next(&l)) {
-      if (tk.kind == TK_PLUS) {
-          Token tk = expect_next(&l, TK_NUMBER);
-          printf("  add $%.*s, %%rax\n", tk.len, tk.str);
-      } else if (tk.kind == TK_MINUS) {
-          Token tk = expect_next(&l, TK_NUMBER);
-          printf("  sub $%.*s, %%rax\n", tk.len, tk.str);
-      } else {
-          expect(&l, tk, TK_EOF);
-      }
-  }
-  printf("  ret\n");
+    char *file_path = "example.c";
 
-  return 0;
+    char buff[1024 * 1024];
+    FILE *file_stream = fopen(file_path, "r");
+    int n = fread(buff, 1, sizeof(buff), file_stream);
+    if ((uint)n >= sizeof(buff)) {
+        fprintf(stderr, "ERROR: Input is too big\n");
+        return 1;
+    }
+
+    Token *tok = tokenize(buff, n, file_path);
+    error_tok(tok, "ERROR!");
+    for (; tok; tok = tok->next) {
+        printf("%s:\t%.*s\n", tk_kind_str(tok->kind), (int)tok->len, tok->str);
+    }
+
+    return 0;
 }

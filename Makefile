@@ -5,7 +5,7 @@ $(info objs = $(objs))
 $(info headers = $(headers))
 $(info )
 
-CFLAGS=-g -fno-common
+CFLAGS=-g -fno-common -Wall -Wextra
 
 bin/compiler: $(objs)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
