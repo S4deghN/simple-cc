@@ -7,3 +7,4 @@
 /tmp*
 /chibicc
 core.*
+/example.c

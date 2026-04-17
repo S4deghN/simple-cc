@@ -1,46 +1,10 @@
-#ifndef SRC_LEXER_H
-#define SRC_LEXER_H
-
-#include <stddef.h>
-
-typedef enum {
-    TK_ID = 128,
-    TK_NUM,
-    TK_EOF,
-} TokenKind;
-char *tk_kind_str(TokenKind kind);
-
-typedef struct {
-    char *file_path;
-    char *file_start;
-    size_t file_len;
-} FileInfo;
-
-typedef struct Token Token;
-struct Token {
-    TokenKind kind;
-    Token *next;
-    char *str;
-    size_t len;
-    size_t line_nr;
-    FileInfo *file_info;
-};
-
-Token *tokenize(char *str, size_t len, char *file_path);
-Token *new_tok(TokenKind kind, char *str, size_t len);
-void error_at(char *str, size_t len, size_t index, size_t line_nr, FileInfo *file_info, char *fmt, ...);
-void error_tok(Token *tok, char *fmt, ...);
-
-#endif
-
-#ifdef LEXER_IMPLEMENTATION
-
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-static FileInfo file_info;
-static size_t line_nr;
-
+#include "cc.h"
 
 static char *
 str_find_next_newline(char *str_end, char *cursor)
@@ -61,9 +25,9 @@ str_find_prev_newline(char *str_start, char *cursor)
 }
 
 static void
-verror_at(char *str, size_t len, size_t index, size_t line_nr, char *file_path, char *fmt, va_list arg_ptr)
+verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list arg_ptr)
 {
-    char *cursor = str + index;
+    char *cursor = str + offset;
     char *line_start = str_find_prev_newline(str,       cursor) + 1;
     char *line_end   = str_find_next_newline(str + len, cursor);
     int column = cursor - line_start;
@@ -77,11 +41,11 @@ verror_at(char *str, size_t len, size_t index, size_t line_nr, char *file_path, 
 }
 
 void
-error_at(char *str, size_t len, size_t index, size_t line_nr, FileInfo *file_info, char *fmt, ...)
+error_at(File *file, size_t offset, size_t line_nr, char *fmt, ...)
 {
     va_list arg_ptr;
     va_start(arg_ptr, fmt);
-    verror_at(str, len, index, line_nr, file_info->file_path, fmt, arg_ptr);
+    verror_at(file->str, file->len, offset, line_nr, file->path, fmt, arg_ptr);
     exit(1);
 }
 
@@ -90,11 +54,10 @@ error_tok(Token *tok, char *fmt, ...)
 {
     va_list arg_ptr;
     va_start(arg_ptr, fmt);
-    char  *file_start = tok->file_info->file_start;
-    size_t file_len   = tok->file_info->file_len;
-    size_t index      = tok->str - file_start;
-    char  *file_path  = tok->file_info->file_path;
-    verror_at(file_start, file_len, index, tok->line_nr, file_path, fmt, arg_ptr);
+    char  *str    = tok->file->str;
+    size_t len    = tok->file->len;
+    size_t offset = tok->str - str;
+    verror_at(str, len, offset, tok->line_nr, tok->file->path, fmt, arg_ptr);
     exit(1);
 }
 
@@ -140,19 +103,25 @@ is_boundry(int c)
 }
 
 static size_t
-skip_id(size_t i, char *str, size_t len)
+skip_id(File *file, size_t i, size_t line_nr)
 {
+    size_t len = file->len;
+    char  *str = file->str;
+
     if (!is_ident_start(str[i])) return i;
 
     while (++i < len && is_ident(str[i]));
-    if (!is_boundry(str[i])) error_at(str, len, i, line_nr, &file_info, "Bad formed identifier!");
+    if (!is_boundry(str[i])) error_at(file, i, line_nr, "Bad formed identifier!");
 
     return i;
 }
 
 static size_t
-skip_num(size_t i, char *str, size_t len)
+skip_num(File *file, size_t i, size_t line_nr)
 {
+    size_t len = file->len;
+    char  *str = file->str;
+
     if (!isdigit(str[i])) return i;
 
     if (str[i] != '0') { // Regular number
@@ -169,7 +138,7 @@ skip_num(size_t i, char *str, size_t len)
         if (!is_boundry(str[i])) goto hex_err;
         return i;
     hex_err:
-        error_at(str, len, i, line_nr, &file_info, "Bad formed hex number!");
+        error_at(file, i, line_nr, "Bad formed hex number!");
     }
 
     if (str[i] == 'b' || str[i] == 'B') { // Binary numbers
@@ -178,39 +147,40 @@ skip_num(size_t i, char *str, size_t len)
         if (!is_boundry(str[i])) goto bin_err;
         return i;
     bin_err:
-        error_at(str, len, i, line_nr, &file_info, "Bad formed binary number!");
+        error_at(file, i, line_nr, "Bad formed binary number!");
     }
 
     if (is_oct_digit(str[i])) { // Octal numbers
         while (++i < len && is_oct_digit(str[i]));
-        if (!is_boundry(str[i])) error_at(str, len, i, line_nr, &file_info, "Bad formed octal number!");
+        if (!is_boundry(str[i])) error_at(file, i, line_nr, "Bad formed octal number!");
         return i;
     }
 
 num_err:
-    error_at(str, len, i, line_nr, &file_info, "Bad formed number!");
+    error_at(file, i, line_nr, "Bad formed number!");
     return i;
 }
 
 Token *
-new_tok(TokenKind kind, char *str, size_t len) {
+new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr) {
     Token *tok = calloc(1, sizeof(Token));
     tok->kind = kind;
     tok->str = str;
     tok->len = len;
+    tok->file = file;
+    tok->line_nr = line_nr;
     return tok;
 }
 
 Token *
-tokenize(char *str, size_t len, char *file_path)
+tokenize(File *file)
 {
+    size_t len     = file->len;
+    char  *str     = file->str;
+    size_t line_nr = 1;
+
     Token head = {0};
     Token *tok = &head;
-
-    file_info.file_path = file_path;
-    file_info.file_start = str;
-    file_info.file_len = len;
-    line_nr = 1;
 
     for (size_t i = 0; i < len;) {
         while (isspace(str[i])) {
@@ -222,8 +192,8 @@ tokenize(char *str, size_t len, char *file_path)
         size_t mark = i;
         TokenKind kind;
 
-        if      ((i = skip_id(i, str, len))  != mark) { kind = TK_ID; }
-        else if ((i = skip_num(i, str, len)) != mark) { kind = TK_NUM; }
+        if      ((i = skip_id(file, i, line_nr)) != mark) { kind = TK_ID; }
+        else if ((i = skip_num(file, i, line_nr)) != mark) { kind = TK_NUM; }
         else if (str[i] == '(')  { kind = '('; ++i; }
         else if (str[i] == ')')  { kind = ')'; ++i; }
         else if (str[i] == '{')  { kind = '{'; ++i; }
@@ -239,15 +209,11 @@ tokenize(char *str, size_t len, char *file_path)
         else if (str[i] == '!')  { kind = '!'; ++i; }
         else if (str[i] == '\\') { kind = '\\'; ++i; }
         else {
-            error_at(str, len, i, line_nr, &file_info, "Unknown Syntax!");
+            error_at(file, i, line_nr, "Unknown Syntax!");
         }
 
-        tok = tok->next = new_tok(kind, str + mark, i - mark);
-        tok->line_nr = line_nr;
-        tok->file_info = &file_info;
+        tok = tok->next = new_tok(kind, str + mark, i - mark, file, line_nr);
     }
 
     return head.next;
 }
-
-#endif

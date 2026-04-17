@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#define LEXER_IMPLEMENTATION
-#include "lexer.h"
+#include "cc.h"
+
 typedef enum {
     ND_ADD,
     ND_SUB,
@@ -69,8 +69,7 @@ int main() {
         return 1;
     }
 
-    Token *tok = tokenize(buff, n, file_path);
-    error_tok(tok, "ERROR!");
+    Token *tok = tokenize(&(File){ .str = buff, .len = n, .path = file_path});
     for (; tok; tok = tok->next) {
         printf("%s:\t%.*s\n", tk_kind_str(tok->kind), (int)tok->len, tok->str);
     }
