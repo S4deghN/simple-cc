@@ -22,6 +22,7 @@ typedef enum {
     ND_MUL,
     ND_DIV,
     ND_NUM,
+    ND_NEG,
 } NodeKind;
 
 char *nd_kind_str(NodeKind kind) {
@@ -31,6 +32,7 @@ char *nd_kind_str(NodeKind kind) {
         case ND_MUL: return "MUL";
         case ND_DIV: return "DIV";
         case ND_NUM: return "NUM";
+        case ND_NEG: return "NEG";
         default: return "???";
     }
 }
@@ -38,15 +40,64 @@ char *nd_kind_str(NodeKind kind) {
 typedef struct Node Node;
 struct Node {
     NodeKind kind;
+    Token *tok;
     Node *lhs;
     Node *rhs;
 
     int val;
 };
 
+void print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right) {
+    if (!node) return;
+
+    char *add;
+    char *fmt;
+    if (is_right == -1) { // root
+        fmt = "%.*s%.*s\n";
+        add = "";
+    } else if (is_right) { // right branch
+        fmt = "%.*s├─ %.*s\n";
+        add = "│  ";
+    } else { // left branch
+        fmt = "%.*s└─ %.*s\n";
+        add = "   ";
+    }
+
+    char *node_str;
+    int node_str_len;
+    if (node->kind == ND_NUM) {
+        node_str = node->tok->str;
+        node_str_len = node->tok->len;
+    } else {
+        node_str = nd_kind_str(node->kind);
+        node_str_len = strlen(node_str);
+    }
+    printf(fmt, prefix_cursor, prefix_buff, node_str_len, node_str);
+
+    memcpy(&prefix_buff[prefix_cursor], add, strlen(add));
+    prefix_cursor += strlen(add);
+
+    // Recurse: right then left so right appears above left
+    print_tree(node->rhs, prefix_buff, prefix_cursor, 1);
+    print_tree(node->lhs, prefix_buff, prefix_cursor, 0);
+}
+
+void print_tree_root(const Node *root, char *prefix) {
+    char prefix_buff[256]; // must be big enough or segfault
+    memcpy(prefix_buff, prefix, strlen(prefix));
+    print_tree(root, prefix_buff, strlen(prefix), -1);
+}
+
+
 Node *new_node(NodeKind kind) {
     Node *node = calloc(1, sizeof(*node));
     node->kind = kind;
+    return node;
+}
+
+Node *new_unary(NodeKind kind, Node *expr) {
+    Node *node = new_node(kind);
+    node->lhs = expr;
     return node;
 }
 
@@ -61,16 +112,6 @@ Node *new_num(Token *tk) {
     Node *node = new_node(ND_NUM);
     node->val = strtoul(tk->str, NULL, 10);
     return node;
-}
-
-void travers(Node *node, int depth) {
-    if (node->kind == ND_NUM)
-        printf("%*.s%d\n", depth*3, "", node->val);
-    else
-        printf("%*.s%s\n", depth*3, "", nd_kind_str(node->kind));
-
-    if (node->rhs) travers(node->rhs, depth + 1);
-    if (node->lhs) travers(node->lhs, depth + 1);
 }
 
 void expect(Token *tok, TokenKind kind)
@@ -96,46 +137,9 @@ void expect_skip(Token **mark, TokenKind kind)
 }
 
 Node *expr(Token **mark);
-Node *primary(Token **mark);
 Node *mul(Token **mark);
-
-Node *primary(Token **mark)
-{
-    Node *node;
-    Token *tk = *mark;
-
-    if (tk->kind == TK_NUM) {
-        node = new_num(tk);
-        tk = tk->next;
-    } else if (skip(&tk, '(')) {
-        node = expr(&tk);
-        expect_skip(&tk, ')');
-    } else {
-        error_tok(tk, "Expected primary token!");
-    }
-
-    *mark = tk;
-    return node;
-}
-
-Node *mul(Token **mark)
-{
-    Token *tk = *mark;
-
-    Node *node = primary(&tk);
-    for (;;) {
-        if (skip(&tk, '*')) {
-            node = new_binary(ND_MUL, node, primary(&tk));
-            continue;
-        }
-        if (skip(&tk, '/')) {
-            node = new_binary(ND_DIV, node, primary(&tk));
-            continue;
-        }
-        *mark = tk;
-        return node;
-    }
-}
+Node *unary(Token **mark);
+Node *primary(Token **mark);
 
 Node *expr(Token **mark)
 {
@@ -156,24 +160,85 @@ Node *expr(Token **mark)
     }
 }
 
+Node *mul(Token **mark)
+{
+    Token *tk = *mark;
+
+    Node *node = unary(&tk);
+    for (;;) {
+        if (skip(&tk, '*')) {
+            node = new_binary(ND_MUL, node, unary(&tk));
+            continue;
+        }
+        if (skip(&tk, '/')) {
+            node = new_binary(ND_DIV, node, unary(&tk));
+            continue;
+        }
+        *mark = tk;
+        return node;
+    }
+}
+
+Node *unary(Token **mark)
+{
+    Node *node;
+    Token *tk = *mark;
+
+    if (skip(&tk, '+')) {
+        node = unary(&tk);
+    } else if (skip(&tk, '-')) {
+        node = new_unary(ND_NEG, unary(&tk));
+    } else {
+        node = primary(&tk);
+    }
+
+    *mark = tk;
+    return node;
+}
+
+Node *primary(Token **mark)
+{
+    Node *node;
+    Token *tk = *mark;
+
+    if (tk->kind == TK_NUM) {
+        node = new_num(tk);
+        node->tok = tk;
+        tk = tk->next;
+    } else if (skip(&tk, '(')) {
+        node = expr(&tk);
+        expect_skip(&tk, ')');
+    } else {
+        error_tok(tk, "Expected primary token!");
+    }
+
+    *mark = tk;
+    return node;
+}
+
+
 static int depth;
 
 static void push(void)
 {
-    printf("  push %%rax\n");
+    printf("  push\t%%rax\n");
     depth++;
 }
 
 static void pop(char *arg)
 {
-    printf("  pop %s\n", arg);
+    printf("  pop\t%s\n", arg);
     depth--;
 }
 
 static void gen_expr(Node *node)
 {
     if (node->kind == ND_NUM) {
-        printf("  mov $%d, %%rax\n", node->val);
+        printf("  mov\t$%d, %%rax\n", node->val);
+        return;
+    } else if (node->kind == ND_NEG) {
+        gen_expr(node->lhs);
+        printf("  neg\t%%rax\n");
         return;
     }
 
@@ -184,20 +249,21 @@ static void gen_expr(Node *node)
 
     switch (node->kind) {
     case ND_ADD:
-        printf("  add %%rdi, %%rax\n");
+        printf("  add\t%%rdi, %%rax\n");
         return;
     case ND_SUB:
-        printf("  sub %%rdi, %%rax\n");
+        printf("  sub\t%%rdi, %%rax\n");
         return;
     case ND_MUL:
-        printf("  imul %%rdi, %%rax\n");
+        printf("  imul\t%%rdi, %%rax\n");
         return;
     case ND_DIV:
         printf("  cqo\n");
-        printf("  idiv %%rdi\n");
+        printf("  idiv\t%%rdi\n");
         return;
+    default:
+        error("invalid expression");
     }
-    error("invalid expression");
 }
 
 int main(int argc, char *argv[]) {
@@ -209,15 +275,15 @@ int main(int argc, char *argv[]) {
     Node *node = expr(&tk);
     expect(tk, TK_EOF);
 
-    // travers(node, 0);
-
     printf(".global main\n");
     printf("main:\n");
 
+    print_tree_root(node, "  // ");
     gen_expr(node);
+
     assert(depth == 0);
 
-    printf("ret\n");
+    printf("  ret\n");
 
     return 0;
 }
