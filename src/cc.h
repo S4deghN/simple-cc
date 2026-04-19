@@ -39,5 +39,43 @@ Token *tokenize(File *file);
 Token *new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr);
 void error_at(File *file, size_t line_nr, size_t offset, char *fmt, ...);
 void error_tok(Token *tok, char *fmt, ...);
+void error(char *fmt, ...);
+
+//
+// parser.c
+//
+
+typedef enum {
+    ND_ADD,
+    ND_SUB,
+    ND_MUL,
+    ND_DIV,
+    ND_NUM,
+    ND_NEG,
+    ND_LT,
+    ND_LTE,
+    ND_EQ,
+    ND_NE,
+} NodeKind;
+char *nd_kind_str(NodeKind kind);
+
+typedef struct Node Node;
+struct Node {
+    NodeKind kind;
+    Token *tok;
+    Node *lhs;
+    Node *rhs;
+
+    int val;
+};
+
+Node *parse(Token *tok);
+void print_tree(const Node *root, char *prefix);
+
+//
+// codegen.c
+//
+
+void codegen(Node *node);
 
 #endif

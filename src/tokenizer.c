@@ -1,10 +1,27 @@
+#include "cc.h"
+
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "cc.h"
+char *
+tk_kind_str(TokenKind kind)
+{
+    switch (kind) {
+        case TK_EOF:  return "EOF";
+        case TK_ID:   return "ID";
+        case TK_NUM:  return "NUM";
+        case TK_GREQ: return "GREQ";
+        case TK_LTEQ: return "LTEQ";
+        case TK_EQ:   return "EQ";
+        case TK_NOEQ: return "NOEQ";
+        default:
+            if (ispunct(kind)) return "PUNCT";
+            return "str conversion no implemented!";
+    }
+}
 
 static char *
 str_find_next_newline(char *str_end, char *cursor)
@@ -61,19 +78,14 @@ error_tok(Token *tok, char *fmt, ...)
     exit(1);
 }
 
-char *tk_kind_str(TokenKind kind) {
-    switch (kind) {
-        case TK_EOF:  return "EOF";
-        case TK_ID:   return "ID";
-        case TK_NUM:  return "NUM";
-        case TK_GREQ: return "GREQ";
-        case TK_LTEQ: return "LTEQ";
-        case TK_EQ:   return "EQ";
-        case TK_NOEQ: return "NOEQ";
-        default:
-            if (ispunct(kind)) return "PUNCT";
-            return "str conversion no implemented!";
-    }
+void
+error(char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
 }
 
 static int
