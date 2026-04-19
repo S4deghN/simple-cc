@@ -18,6 +18,10 @@ typedef enum {
     // skip litteral ascii tokens
     TK_ID = 128,
     TK_NUM,
+    TK_GREQ,
+    TK_LTEQ,
+    TK_EQ,
+    TK_NOEQ,
 } TokenKind;
 char *tk_kind_str(TokenKind kind);
 

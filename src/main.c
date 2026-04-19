@@ -23,6 +23,10 @@ typedef enum {
     ND_DIV,
     ND_NUM,
     ND_NEG,
+    ND_LT,
+    ND_LTE,
+    ND_EQ,
+    ND_NE,
 } NodeKind;
 
 char *nd_kind_str(NodeKind kind) {
@@ -33,6 +37,10 @@ char *nd_kind_str(NodeKind kind) {
         case ND_DIV: return "DIV";
         case ND_NUM: return "NUM";
         case ND_NEG: return "NEG";
+        case ND_LT:  return "LT";
+        case ND_LTE: return "LTE";
+        case ND_EQ:  return "EQ";
+        case ND_NE:  return "NE";
         default: return "???";
     }
 }
@@ -137,11 +145,65 @@ void expect_skip(Token **mark, TokenKind kind)
 }
 
 Node *expr(Token **mark);
+Node *equality(Token **mark);
+Node *relational(Token **mark);
+Node *add(Token **mark);
 Node *mul(Token **mark);
 Node *unary(Token **mark);
 Node *primary(Token **mark);
 
 Node *expr(Token **mark)
+{
+    return equality(mark);
+}
+
+Node *equality(Token **mark)
+{
+    Token *tk = *mark;
+
+    Node *node = relational(&tk);
+    for (;;) {
+        if (skip(&tk, TK_EQ)) {
+            node = new_binary(ND_EQ, node, relational(&tk));
+            continue;
+        }
+        if (skip(&tk, TK_NOEQ)) {
+            node = new_binary(ND_NE, node, relational(&tk));
+            continue;
+        }
+        *mark = tk;
+        return node;
+    }
+}
+
+Node *relational(Token **mark)
+{
+    Token *tk = *mark;
+
+    Node *node = add(&tk);
+    for (;;) {
+        if (skip(&tk, '<')) {
+            node = new_binary(ND_LT, node, add(&tk));
+            continue;
+        }
+        if (skip(&tk, '>')) {
+            node = new_binary(ND_LT, add(&tk), node);
+            continue;
+        }
+        if (skip(&tk, TK_LTEQ)) {
+            node = new_binary(ND_LTE, node, add(&tk));
+            continue;
+        }
+        if (skip(&tk, TK_GREQ)) {
+            node = new_binary(ND_LTE, add(&tk), node);
+            continue;
+        }
+        *mark = tk;
+        return node;
+    }
+}
+
+Node *add(Token **mark)
 {
     Token *tk = *mark;
 
@@ -260,6 +322,22 @@ static void gen_expr(Node *node)
     case ND_DIV:
         printf("  cqo\n");
         printf("  idiv\t%%rdi\n");
+        return;
+    case ND_EQ:
+    case ND_NE:
+    case ND_LT:
+    case ND_LTE:
+        printf("  cmp\t%%rdi, %%rax\n");
+        if (node->kind == ND_EQ) {
+            printf("  sete\t%%al\n");
+        } else if (node->kind == ND_NE) {
+            printf("  setne\t%%al\n");
+        } else if (node->kind == ND_LT) {
+            printf("  setl\t%%al\n");
+        } else if (node->kind == ND_LTE) {
+            printf("  setle\t%%al\n");
+        }
+        printf("  movzb\t%%al, %%rax\n");
         return;
     default:
         error("invalid expression");

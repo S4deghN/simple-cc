@@ -63,9 +63,13 @@ error_tok(Token *tok, char *fmt, ...)
 
 char *tk_kind_str(TokenKind kind) {
     switch (kind) {
-        case TK_EOF: return "EOF";
-        case TK_ID:  return "ID";
-        case TK_NUM: return "NUM";
+        case TK_EOF:  return "EOF";
+        case TK_ID:   return "ID";
+        case TK_NUM:  return "NUM";
+        case TK_GREQ: return "GREQ";
+        case TK_LTEQ: return "LTEQ";
+        case TK_EQ:   return "EQ";
+        case TK_NOEQ: return "NOEQ";
         default:
             if (ispunct(kind)) return "PUNCT";
             return "str conversion no implemented!";
@@ -161,6 +165,25 @@ num_err:
     return i;
 }
 
+static size_t
+skip_rel(File *file, size_t i, size_t line_nr, TokenKind *kind)
+{
+    (void) line_nr;
+    size_t len = file->len;
+    char  *str = file->str;
+
+    if (i+1 >= len || str[i+1] != '=') return i;
+
+    switch (str[i]) {
+    case '=': *kind = TK_EQ;   i += 2; break;
+    case '!': *kind = TK_NOEQ; i += 2; break;
+    case '<': *kind = TK_LTEQ; i += 2; break;
+    case '>': *kind = TK_GREQ; i += 2; break;
+    }
+
+    return i;
+}
+
 Token *
 new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr) {
     Token *tok = calloc(1, sizeof(Token));
@@ -195,20 +218,8 @@ tokenize(File *file)
 
         if      ((i = skip_id(file, i, line_nr)) != mark) { kind = TK_ID; }
         else if ((i = skip_num(file, i, line_nr)) != mark) { kind = TK_NUM; }
-        else if (str[i] == '(')  { kind = '('; ++i; }
-        else if (str[i] == ')')  { kind = ')'; ++i; }
-        else if (str[i] == '{')  { kind = '{'; ++i; }
-        else if (str[i] == '}')  { kind = '}'; ++i; }
-        else if (str[i] == '"')  { kind = '"'; ++i; }
-        else if (str[i] == ';')  { kind = ';'; ++i; }
-        else if (str[i] == ',')  { kind = ','; ++i; }
-        else if (str[i] == '=')  { kind = '='; ++i; }
-        else if (str[i] == '*')  { kind = '*'; ++i; }
-        else if (str[i] == '+')  { kind = '+'; ++i; }
-        else if (str[i] == '-')  { kind = '-'; ++i; }
-        else if (str[i] == '/')  { kind = '/'; ++i; }
-        else if (str[i] == '!')  { kind = '!'; ++i; }
-        else if (str[i] == '\\') { kind = '\\'; ++i; }
+        else if ((i = skip_rel(file, i, line_nr, &kind)) != mark) {}
+        else if (ispunct(str[i])) { kind = str[i++]; }
         else {
             error_at(file, i, line_nr, "Unknown Syntax!");
         }
