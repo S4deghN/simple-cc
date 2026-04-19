@@ -9,6 +9,7 @@
 char *
 tk_kind_str(TokenKind kind)
 {
+    static char ret_buff[16];
     switch (kind) {
         case TK_EOF:  return "EOF";
         case TK_ID:   return "ID";
@@ -18,8 +19,11 @@ tk_kind_str(TokenKind kind)
         case TK_EQ:   return "EQ";
         case TK_NOEQ: return "NOEQ";
         default:
-            if (ispunct(kind)) return "PUNCT";
-            return "str conversion no implemented!";
+            if (ispunct(kind)) {
+                sprintf(ret_buff, "PUNCT(%c)", kind);
+                return ret_buff;
+            }
+            return "str conversion not implemented!";
     }
 }
 

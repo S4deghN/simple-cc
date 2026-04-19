@@ -71,14 +71,24 @@ gen_expr(Node *node)
     }
 }
 
+static void
+gen_stmt(Node *node)
+{
+    expect_node(node, ND_EXPR_STMT);
+    gen_expr(node->lhs);
+    return;
+}
+
 void
 codegen(Node *node) 
 {
     printf(".global main\n");
     printf("main:\n");
 
-    print_tree(node, "  // ");
-    gen_expr(node);
+    for (Node *n = node; n; n = n->next) {
+        print_tree(node, "  // ");
+        gen_stmt(n);
+    }
     assert(depth == 0);
 
     printf("  ret\n");

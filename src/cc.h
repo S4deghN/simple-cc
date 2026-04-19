@@ -50,12 +50,13 @@ typedef enum {
     ND_SUB,
     ND_MUL,
     ND_DIV,
-    ND_NUM,
     ND_NEG,
     ND_LT,
     ND_LTE,
     ND_EQ,
     ND_NE,
+    ND_EXPR_STMT,
+    ND_NUM,
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
@@ -63,6 +64,7 @@ typedef struct Node Node;
 struct Node {
     NodeKind kind;
     Token *tok;
+    Node *next;
     Node *lhs;
     Node *rhs;
 
@@ -70,6 +72,7 @@ struct Node {
 };
 
 Node *parse(Token *tok);
+void expect_node(Node *node, NodeKind kind);
 void print_tree(const Node *root, char *prefix);
 
 //

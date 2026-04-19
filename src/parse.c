@@ -19,6 +19,7 @@ nd_kind_str(NodeKind kind)
         case ND_LTE: return "LTE";
         case ND_EQ:  return "EQ";
         case ND_NE:  return "NE";
+        case ND_EXPR_STMT:  return "EXPR_STMT";
         default: return "???";
     }
 }
@@ -70,37 +71,46 @@ print_tree(const Node *root, char *prefix)
 
 
 static Node *
-new_node(NodeKind kind)
+new_node(NodeKind kind, Token *tok)
 {
     Node *node = calloc(1, sizeof(*node));
     node->kind = kind;
+    node->tok = tok;
     return node;
 }
 
 static Node *
-new_unary(NodeKind kind, Node *expr)
+new_unary(NodeKind kind, Node *expr, Token *tok)
 {
-    Node *node = new_node(kind);
+    Node *node = new_node(kind, tok);
     node->lhs = expr;
     return node;
 }
 
 static Node *
-new_binary(NodeKind kind, Node *lhs, Node *rhs)
+new_binary(NodeKind kind, Node *lhs, Node *rhs, Token *tok)
 {
-    Node *node = new_node(kind);
+    Node *node = new_node(kind, tok);
     node->lhs = lhs;
     node->rhs = rhs;
     return node;
 }
 
 static Node *
-new_num(Token *tk)
+new_num(Token *tok)
 {
-    Node *node = new_node(ND_NUM);
-    node->val = strtoul(tk->str, NULL, 10);
+    Node *node = new_node(ND_NUM, tok);
+    node->val = strtoul(tok->str, NULL, 10);
     return node;
 }
+
+void
+expect_node(Node *node, NodeKind kind)
+{
+    if (node->kind != kind)
+        error_tok(node->tok, "Expected '%s', got '%s'", nd_kind_str(kind), nd_kind_str(node->kind));
+}
+
 
 static void
 expect(Token *tok, TokenKind kind)
@@ -129,12 +139,26 @@ expect_skip(Token **mark, TokenKind kind)
 }
 
 static Node *expr(Token **mark);
+static Node *expr_stmt(Token **mark);
 static Node *equality(Token **mark);
 static Node *relational(Token **mark);
 static Node *add(Token **mark);
 static Node *mul(Token **mark);
 static Node *unary(Token **mark);
 static Node *primary(Token **mark);
+
+static Node *
+stmt(Token **mark)
+{
+    return expr_stmt(mark);
+}
+
+static Node *
+expr_stmt(Token **mark) {
+    Node *node = new_unary(ND_EXPR_STMT, expr(mark), *mark);
+    expect_skip(mark, ';');
+    return node;
+}
 
 static Node *
 expr(Token **mark)
@@ -150,11 +174,11 @@ equality(Token **mark)
     Node *node = relational(&tk);
     for (;;) {
         if (skip(&tk, TK_EQ)) {
-            node = new_binary(ND_EQ, node, relational(&tk));
+            node = new_binary(ND_EQ, node, relational(&tk), tk);
             continue;
         }
         if (skip(&tk, TK_NOEQ)) {
-            node = new_binary(ND_NE, node, relational(&tk));
+            node = new_binary(ND_NE, node, relational(&tk), tk);
             continue;
         }
         *mark = tk;
@@ -170,19 +194,19 @@ relational(Token **mark)
     Node *node = add(&tk);
     for (;;) {
         if (skip(&tk, '<')) {
-            node = new_binary(ND_LT, node, add(&tk));
+            node = new_binary(ND_LT, node, add(&tk), tk);
             continue;
         }
         if (skip(&tk, '>')) {
-            node = new_binary(ND_LT, add(&tk), node);
+            node = new_binary(ND_LT, add(&tk), node, tk);
             continue;
         }
         if (skip(&tk, TK_LTEQ)) {
-            node = new_binary(ND_LTE, node, add(&tk));
+            node = new_binary(ND_LTE, node, add(&tk), tk);
             continue;
         }
         if (skip(&tk, TK_GREQ)) {
-            node = new_binary(ND_LTE, add(&tk), node);
+            node = new_binary(ND_LTE, add(&tk), node, tk);
             continue;
         }
         *mark = tk;
@@ -198,11 +222,11 @@ add(Token **mark)
     Node *node = mul(&tk);
     for (;;) {
         if (skip(&tk, '+')) {
-            node = new_binary(ND_ADD, node, mul(&tk));
+            node = new_binary(ND_ADD, node, mul(&tk), tk);
             continue;
         }
         if (skip(&tk, '-')) {
-            node = new_binary(ND_SUB, node, mul(&tk));
+            node = new_binary(ND_SUB, node, mul(&tk), tk);
             continue;
         }
         *mark = tk;
@@ -218,11 +242,11 @@ mul(Token **mark)
     Node *node = unary(&tk);
     for (;;) {
         if (skip(&tk, '*')) {
-            node = new_binary(ND_MUL, node, unary(&tk));
+            node = new_binary(ND_MUL, node, unary(&tk), tk);
             continue;
         }
         if (skip(&tk, '/')) {
-            node = new_binary(ND_DIV, node, unary(&tk));
+            node = new_binary(ND_DIV, node, unary(&tk), tk);
             continue;
         }
         *mark = tk;
@@ -239,7 +263,7 @@ unary(Token **mark)
     if (skip(&tk, '+')) {
         node = unary(&tk);
     } else if (skip(&tk, '-')) {
-        node = new_unary(ND_NEG, unary(&tk));
+        node = new_unary(ND_NEG, unary(&tk), tk);
     } else {
         node = primary(&tk);
     }
@@ -256,7 +280,6 @@ primary(Token **mark)
 
     if (tk->kind == TK_NUM) {
         node = new_num(tk);
-        node->tok = tk;
         tk = tk->next;
     } else if (skip(&tk, '(')) {
         node = expr(&tk);
@@ -272,7 +295,11 @@ primary(Token **mark)
 Node *
 parse(Token *tok)
 {
-    Node *node = expr(&tok);
-    expect(tok, TK_EOF);
-    return node;
+    Node head = {0};
+    Node *node = &head;
+
+    while (tok->kind != TK_EOF)
+        node = node->next = stmt(&tok);
+
+    return head.next;
 }
