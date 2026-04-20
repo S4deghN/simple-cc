@@ -9,7 +9,7 @@
 char *
 tk_kind_str(TokenKind kind)
 {
-    static char ret_buff[16];
+    char *ret_buff = malloc(16); // TODO: use temp buffer.
     switch (kind) {
         case TK_EOF:  return "EOF";
         case TK_ID:   return "ID";
