@@ -31,7 +31,8 @@ static void
 verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
     char *cursor = str + offset;
-    char *line_start = str_find_prev(str,       cursor, '\n') + 1;
+    char *line_start = str_find_prev(str,       cursor, '\n');
+    if (line_start != str) line_start += 1;
     char *line_end   = str_find_next(str + len, cursor, '\n');
     int column = cursor - line_start;
     int line_len = line_end - line_start;

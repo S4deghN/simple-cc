@@ -39,8 +39,10 @@ nd_kind_str(NodeKind kind)
 static void
 get_stmt_str(Token *tok, char **str, int *len)
 {
-    char *line_start = str_find_prev(tok->file->str, tok->str, ';');
-    if (line_start != tok->str) line_start += 1; // skip previous ';'
+    char *line_start;
+    if (tok->str == tok->file->str) line_start = tok->str;
+    else line_start = str_find_prev(tok->file->str, tok->str - 1, ';'); // Go back one step in case we are on a ';'
+    if (*line_start == ';') line_start += 1; // skip previous ';'
     char *line_end   = str_find_next(tok->file->str + tok->file->len, tok->str, ';') + 1;
 
     *str = line_start;
