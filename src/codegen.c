@@ -22,11 +22,11 @@ pop(char *arg)
 static void
 gen_addr(Node *node)
 {
-    int offset = (node->name - 'a' + 1) * 8;
-    printf("  lea -%d(%%rbp), %%rax\n", offset);
+    assert(node->kind == ND_VAR);
+    printf("  lea -%d(%%rbp), %%rax\n", node->var->stack_offset);
     // or
     // printf("  mov\t%%rbp, %%rax\n");
-    // printf("  sub\t$%d, %%rax\n", offset);
+    // printf("  sub\t$%d, %%rax\n", node->var->stack_offset);
 }
 
 static void
@@ -100,18 +100,31 @@ gen_stmt(Node *node)
     return;
 }
 
-void
-codegen(Node *node) 
+static void
+assing_locals_offset(Function *prog)
 {
+    int offset = 0;
+    for (Var *var = prog->locals; var; var = var->next) {
+        offset += 8;
+        var->stack_offset = offset;
+    }
+    prog->stack_size = align_to(offset, 16);
+}
+
+void
+codegen(Function *prog)
+{
+    assing_locals_offset(prog);
+
     printf(".global main\n");
     printf("main:\n");
 
     // prolog
     printf("  push %%rbp\n");
     printf("  mov %%rsp, %%rbp\n");
-    printf("  sub $208, %%rsp\n"); // allocated stack memory for all single letter variable.
+    printf("  sub $%d, %%rsp\n", prog->stack_size);
 
-    for (Node *n = node; n; n = n->next) {
+    for (Node *n = prog->body; n; n = n->next) {
         assert(n->kind == ND_EXPR_STMT);
         print_tree(n, "  // ");
         gen_stmt(n);

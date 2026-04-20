@@ -15,6 +15,7 @@ typedef struct {
 
 char *str_find_next(char *str_end, char *cursor, char c);
 char *str_find_prev(char *str_start, char *cursor, char c);
+int align_to(int n, int align);
 
 //
 // tokenize.c
@@ -71,6 +72,21 @@ typedef enum {
 char *nd_kind_str(NodeKind kind);
 
 typedef struct Node Node;
+
+typedef struct Var Var;
+struct Var {
+    Var *next;
+    Token *tok;
+    int stack_offset;
+};
+
+typedef struct Function Function;
+struct Function {
+    Node *body;
+    Var *locals;
+    int stack_size;
+};
+
 struct Node {
     NodeKind kind;
     Token *tok;
@@ -79,10 +95,10 @@ struct Node {
     Node *rhs;
 
     int val;
-    char name;
+    Var *var;
 };
 
-Node *parse(Token *tok);
+Function *parse(Token *tok);
 void expect_node(Node *node, NodeKind kind);
 void print_tree(const Node *root, char *prefix);
 
@@ -90,6 +106,6 @@ void print_tree(const Node *root, char *prefix);
 // codegen.c
 //
 
-void codegen(Node *node);
+void codegen(Function *prog);
 
 #endif

@@ -23,3 +23,9 @@ str_find_prev(char *str_start, char *cursor, char c)
     }
     return cursor;
 }
+
+int
+align_to(int n, int align)
+{
+    return n + (align - (n % align)) % align;
+}

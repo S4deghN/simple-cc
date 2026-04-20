@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdbool.h>
 
+Var *locals;
+
 static Node *expr(Token **tok);
 static Node *expr_stmt(Token **tok);
 static Node *assign(Token **tok);
@@ -101,6 +103,15 @@ print_tree(const Node *root, char *prefix)
     _print_tree(root, prefix_buff, strlen(prefix), -1);
 }
 
+static Var *
+find_var(Token *tok)
+{
+    for (Var *var = locals; var; var = var->next) {
+        if (var->tok->len == tok->len &&
+            strncmp(var->tok->str,  tok->str, tok->len) == 0) return var;
+    }
+    return NULL;
+}
 
 static Node *
 new_node(NodeKind kind, Token *tok)
@@ -137,11 +148,17 @@ new_num(Token *tok)
 }
 
 static Node *
-new_var(Token *tok)
+new_var_node(Token *tok)
 {
+    Var *var = find_var(tok);
+    if (!var) {
+        var = calloc(1, sizeof(*var));
+        var->tok = tok;
+        var->next = locals;
+        locals = var;
+    }
     Node *node = new_node(ND_VAR, tok);
-    if (tok->len > 1) error_tok(tok, "Var name is too long!");
-    node->name = *tok->str;
+    node->var = var;
     return node;
 }
 
@@ -330,7 +347,7 @@ primary(Token **tok)
     if (skip(tok, TK_NUM)) {
         node = new_num(mark);
     } else if (skip(tok, TK_ID)) {
-        node = new_var(mark);
+        node = new_var_node(mark);
     } else if (skip(tok, '(')) {
         node = expr(tok);
         expect_skip(tok, ')');
@@ -341,7 +358,7 @@ primary(Token **tok)
     return node;
 }
 
-Node *
+Function *
 parse(Token *tok)
 {
     Node head = {0};
@@ -350,5 +367,9 @@ parse(Token *tok)
     while (tok->kind != TK_EOF)
         node = node->next = stmt(&tok);
 
-    return head.next;
+    Function *func = calloc(1, sizeof(*func));
+    func->body = head.next;
+    func->locals = locals;
+
+    return func;
 }
