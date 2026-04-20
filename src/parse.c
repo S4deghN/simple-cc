@@ -166,9 +166,18 @@ expect_skip(Token **mark, TokenKind kind)
 }
 
 static Node *
-stmt(Token **mark)
+stmt(Token **tok)
 {
-    return expr_stmt(mark);
+    Token *mark = *tok;
+    Node *node;
+
+    if (skip(tok, ';')) {
+        node = new_node(ND_EXPR_STMT, mark);
+    } else {
+        node = expr_stmt(tok);
+    }
+
+    return node;
 }
 
 static Node *

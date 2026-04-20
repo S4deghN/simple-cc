@@ -96,7 +96,7 @@ static void
 gen_stmt(Node *node)
 {
     expect_node(node, ND_EXPR_STMT);
-    gen_expr(node->lhs);
+    if (node->lhs) gen_expr(node->lhs);
     return;
 }
 
@@ -112,6 +112,7 @@ codegen(Node *node)
     printf("  sub $208, %%rsp\n"); // allocated stack memory for all single letter variable.
 
     for (Node *n = node; n; n = n->next) {
+        assert(n->kind == ND_EXPR_STMT);
         print_tree(n, "  // ");
         gen_stmt(n);
     }
