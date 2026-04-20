@@ -5,6 +5,16 @@
 #include <string.h>
 #include <stdbool.h>
 
+static Node *expr(Token **mark);
+static Node *expr_stmt(Token **mark);
+static Node *assign(Token **mark);
+static Node *equality(Token **mark);
+static Node *relational(Token **mark);
+static Node *add(Token **mark);
+static Node *mul(Token **mark);
+static Node *unary(Token **mark);
+static Node *primary(Token **mark);
+
 char *
 nd_kind_str(NodeKind kind)
 {
@@ -19,6 +29,8 @@ nd_kind_str(NodeKind kind)
         case ND_LTE: return "LTE";
         case ND_EQ:  return "EQ";
         case ND_NE:  return "NE";
+        case ND_VAR: return "VAR";
+        case ND_ASSIGN: return "ASSIGN";
         case ND_EXPR_STMT:  return "EXPR_STMT";
         default: return "???";
     }
@@ -44,7 +56,7 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
 
     char *node_str;
     int node_str_len;
-    if (node->kind == ND_NUM) {
+    if (node->kind == ND_NUM || node->kind == ND_VAR) {
         node_str = node->tok->str;
         node_str_len = node->tok->len;
     } else {
@@ -66,6 +78,12 @@ print_tree(const Node *root, char *prefix)
 {
     char prefix_buff[256]; // must be big enough or segfault
     memcpy(prefix_buff, prefix, strlen(prefix));
+
+    char *line;
+    int line_len;
+    get_tok_line(root->tok, &line, &line_len);
+    printf("%s%.*s\n", prefix, line_len, line);
+
     _print_tree(root, prefix_buff, strlen(prefix), -1);
 }
 
@@ -104,6 +122,15 @@ new_num(Token *tok)
     return node;
 }
 
+static Node *
+new_var(Token *tok)
+{
+    Node *node = new_node(ND_VAR, tok);
+    if (tok->len > 1) error_tok(tok, "Var name is too long!");
+    node->name = *tok->str;
+    return node;
+}
+
 void
 expect_node(Node *node, NodeKind kind)
 {
@@ -138,15 +165,6 @@ expect_skip(Token **mark, TokenKind kind)
         error_tok(*mark, "Expected '%s', got '%s'", tk_kind_str(kind), tk_kind_str((*mark)->kind));
 }
 
-static Node *expr(Token **mark);
-static Node *expr_stmt(Token **mark);
-static Node *equality(Token **mark);
-static Node *relational(Token **mark);
-static Node *add(Token **mark);
-static Node *mul(Token **mark);
-static Node *unary(Token **mark);
-static Node *primary(Token **mark);
-
 static Node *
 stmt(Token **mark)
 {
@@ -163,7 +181,19 @@ expr_stmt(Token **mark) {
 static Node *
 expr(Token **mark)
 {
-    return equality(mark);
+    return assign(mark);
+}
+
+static Node *
+assign(Token **mark)
+{
+    Token *tk = *mark;
+    Node *node = equality(&tk);
+    if (skip(&tk, '=')) {
+        node = new_binary(ND_ASSIGN, node, assign(&tk), tk);
+    }
+    *mark = tk;
+    return node;
 }
 
 static Node *
@@ -280,6 +310,9 @@ primary(Token **mark)
 
     if (tk->kind == TK_NUM) {
         node = new_num(tk);
+        tk = tk->next;
+    } else if (tk->kind == TK_ID) {
+        node = new_var(tk);
         tk = tk->next;
     } else if (skip(&tk, '(')) {
         node = expr(&tk);

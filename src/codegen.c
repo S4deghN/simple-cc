@@ -20,6 +20,17 @@ pop(char *arg)
 }
 
 static void
+gen_addr(Node *node)
+{
+    if (node->kind != ND_VAR) error_tok(node->tok, "not an lvalue!");
+    int offset = (node->name - 'a' + 1) * 8;
+    printf("  lea -%d(%%rbp), %%rax\n", offset);
+    // or
+    // printf("  mov\t%%rbp, %%rax\n");
+    // printf("  sub\t$%d, %%rax\n", offset);
+}
+
+static void
 gen_expr(Node *node)
 {
     if (node->kind == ND_NUM) {
@@ -28,6 +39,17 @@ gen_expr(Node *node)
     } else if (node->kind == ND_NEG) {
         gen_expr(node->lhs);
         printf("  neg\t%%rax\n");
+        return;
+    } else if (node->kind == ND_VAR) {
+        gen_addr(node);
+        printf("  mov\t(%%rax), %%rax\n");
+        return;
+    } else if (node->kind == ND_ASSIGN) {
+        gen_addr(node->lhs);
+        push();
+        gen_expr(node->rhs);
+        pop("%rdi");
+        printf("  mov\t%%rax, (%%rdi)\n");
         return;
     }
 
@@ -85,11 +107,20 @@ codegen(Node *node)
     printf(".global main\n");
     printf("main:\n");
 
+    // prolog
+    printf("  push %%rbp\n");
+    printf("  mov %%rsp, %%rbp\n");
+    printf("  sub $208, %%rsp\n"); // allocated stack memory for all single letter variable.
+
     for (Node *n = node; n; n = n->next) {
-        print_tree(node, "  // ");
+        print_tree(n, "  // ");
         gen_stmt(n);
     }
     assert(depth == 0);
+
+    // epilogue
+    printf("  mov\t%%rbp, %%rsp\n");
+    printf("  pop\t%%rbp\n");
 
     printf("  ret\n");
 }

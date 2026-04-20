@@ -45,6 +45,15 @@ str_find_prev_newline(char *str_start, char *cursor)
     return cursor;
 }
 
+void
+get_tok_line(Token *tok, char **str, int *len)
+{
+    char *line_start = str_find_prev_newline(tok->file->str, tok->str) + 1;
+    char *line_end   = str_find_next_newline(tok->file->str + tok->file->len, tok->str);
+    *str = line_start;
+    *len = line_end - line_start;
+}
+
 static void
 verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
