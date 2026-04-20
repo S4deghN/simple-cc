@@ -5,6 +5,13 @@
 
 static int depth;
 
+static int
+counter()
+{
+    static int count;
+    return count++;
+}
+
 static void
 push(void)
 {
@@ -95,21 +102,34 @@ gen_expr(Node *node)
 static void
 gen_stmt(Node *node)
 {
-    print_tree(node, "  // ");
-
     switch (node->kind) {
+    case ND_IF:
+        int uniq = counter();
+        gen_expr(node->cond);
+        printf("  cmp\t$0, %%rax\n");
+        printf("  je \t.L.endif.%d\n", uniq);
+        gen_stmt(node->then);
+        if (node->els) printf("  jmp\t.L.endelse.%d\n", uniq);
+        printf(".L.endif.%d:\n", uniq);
+        if (node->els) {
+            gen_stmt(node->els);
+            printf(".L.endelse.%d:\n", uniq);
+        }
+        break;
     case ND_BLOCK:
-        for (Node *n = node->body; n; n = n->next) gen_stmt(n);
+        for (Node *n = node->body; n; n = n->next) {
+            gen_stmt(n);
+        }
         break;
     case ND_RETURN:
         gen_expr(node->lhs);
-        printf("  jmp .L.return\n");
+        printf("  jmp\t.L.return\n");
         break;
     case ND_EXPR_STMT:
         gen_expr(node->lhs);
         break;
     default:
-        expect_node_many(node, 2, ND_EXPR_STMT, ND_RETURN, ND_BLOCK);
+        expect_node_many(node, 3, ND_EXPR_STMT, ND_RETURN, ND_BLOCK);
     }
 }
 
@@ -133,15 +153,15 @@ codegen(Function *prog)
     printf("main:\n");
 
     // prolog
-    printf("  push %%rbp\n");
-    printf("  mov %%rsp, %%rbp\n");
-    printf("  sub $%d, %%rsp\n", prog->stack_size);
+    printf("  push\t%%rbp\n");
+    printf("  mov\t%%rsp, %%rbp\n");
+    printf("  sub\t$%d, %%rsp\n", prog->stack_size);
 
     gen_stmt(prog->body);
     assert(depth == 0);
 
     // epilogue
-    printf("  .L.return:\n");
+    printf(".L.return:\n");
     printf("  mov\t%%rbp, %%rsp\n");
     printf("  pop\t%%rbp\n");
 

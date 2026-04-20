@@ -71,6 +71,7 @@ typedef enum {
     ND_NUM,
     ND_VAR,
     ND_BLOCK,
+    ND_IF,
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
@@ -97,9 +98,19 @@ struct Node {
     Node *lhs;
     Node *rhs;
 
+    // Number
     int val;
+
+    // Variable
     Var *var;
+
+    // Block
     Node *body;
+
+    // If statement
+    Node *cond;
+    Node *then;
+    Node *els;
 };
 
 Function *parse(Token *tok);
