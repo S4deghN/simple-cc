@@ -95,8 +95,9 @@ gen_expr(Node *node)
 static void
 gen_stmt(Node *node)
 {
-    expect_node(node, ND_EXPR_STMT);
+    expect_node_many(node, 2, ND_EXPR_STMT, ND_RETURN);
     if (node->lhs) gen_expr(node->lhs);
+    if (node->kind == ND_RETURN) printf("  jmp .L.return\n");
     return;
 }
 
@@ -125,13 +126,13 @@ codegen(Function *prog)
     printf("  sub $%d, %%rsp\n", prog->stack_size);
 
     for (Node *n = prog->body; n; n = n->next) {
-        assert(n->kind == ND_EXPR_STMT);
         print_tree(n, "  // ");
         gen_stmt(n);
     }
     assert(depth == 0);
 
     // epilogue
+    printf("  .L.return:\n");
     printf("  mov\t%%rbp, %%rsp\n");
     printf("  pop\t%%rbp\n");
 

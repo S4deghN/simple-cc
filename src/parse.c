@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdarg.h>
 
 Var *locals;
 
@@ -33,6 +34,7 @@ nd_kind_str(NodeKind kind)
         case ND_NE:  return "NE";
         case ND_VAR: return "VAR";
         case ND_ASSIGN: return "ASSIGN";
+        case ND_RETURN: return "RETURN";
         case ND_EXPR_STMT:  return "EXPR_STMT";
         default: return "???";
     }
@@ -170,6 +172,31 @@ expect_node(Node *node, NodeKind kind)
 }
 
 
+void
+expect_node_many(Node *node, int n, ...)
+{
+    va_list ap;
+    va_start(ap, n);
+    bool matched = false;
+    for (int i = 0; i < n; ++i) {
+        if (node->kind == va_arg(ap, NodeKind)) {
+            va_end(ap);
+            return;
+        }
+    }
+
+    diag_tok(node->tok, "Expected ");
+
+    va_start(ap, n);
+    fprintf(stderr, "'%s'", nd_kind_str(va_arg(ap, NodeKind)));
+    for (int i = 1; i < n; ++i) {
+        fprintf(stderr, " or '%s'", nd_kind_str(va_arg(ap, NodeKind)));
+    }
+    fprintf(stderr, ", got '%s'\n", nd_kind_str(node->kind));
+    error("");
+}
+
+
 static void
 expect(Token *tok, TokenKind kind)
 {
@@ -178,12 +205,26 @@ expect(Token *tok, TokenKind kind)
 }
 
 static bool
-skip(Token **mark, TokenKind kind)
+skip(Token **tok, TokenKind kind)
 {
-    Token *tk = *mark;
+    Token *tk = *tok;
     if (tk->kind == kind) {
         tk = tk->next;
-        *mark = tk;
+        *tok = tk;
+        return true;
+    }
+    return false;
+}
+
+static bool
+skip_id(Token **tok, char *name)
+{
+    Token *tk = *tok;
+
+    if (tk->kind != TK_ID) return false;
+    if (strlen(name) == (size_t)tk->len && strncmp(name, tk->str, tk->len) == 0) {
+        tk = tk->next;
+        *tok = tk;
         return true;
     }
     return false;
@@ -197,6 +238,9 @@ expect_skip(Token **tok, TokenKind kind)
     }
 }
 
+// stmt = expr-stmt
+// stmt = "return" expr ";"
+//      | expr-stmt
 static Node *
 stmt(Token **tok)
 {
@@ -205,6 +249,9 @@ stmt(Token **tok)
 
     if (skip(tok, ';')) {
         node = new_node(ND_EXPR_STMT, mark);
+    } else if (skip_id(tok, "return")) {
+        node = new_unary(ND_RETURN, expr(tok), mark);
+        expect_skip(tok, ';');
     } else {
         node = expr_stmt(tok);
     }

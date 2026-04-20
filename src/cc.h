@@ -47,6 +47,7 @@ Token *tokenize(File *file);
 Token *new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr);
 void get_tok_line(Token *tok, char **str, int *len);
 void error_at(File *file, size_t line_nr, size_t offset, char *fmt, ...);
+void diag_tok(Token* tok, char *fmt, ...);
 void error_tok(Token *tok, char *fmt, ...);
 void error(char *fmt, ...);
 
@@ -66,6 +67,7 @@ typedef enum {
     ND_LTE,
     ND_ASSIGN,
     ND_EXPR_STMT,
+    ND_RETURN,
     ND_NUM,
     ND_VAR,
 } NodeKind;
@@ -100,6 +102,7 @@ struct Node {
 
 Function *parse(Token *tok);
 void expect_node(Node *node, NodeKind kind);
+void expect_node_many(Node *node, int n, ...);
 void print_tree(const Node *root, char *prefix);
 
 //

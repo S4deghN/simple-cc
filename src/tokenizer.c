@@ -28,7 +28,7 @@ tk_kind_str(TokenKind kind)
 }
 
 static void
-verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
+__diag_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
     char *cursor = str + offset;
     char *line_start = str_find_prev(str,       cursor, '\n');
@@ -41,7 +41,26 @@ verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path,
     fprintf(stderr, "  %.*s\n", line_len, line_start);
     fprintf(stderr, "  %*s^\n", column, "");
     vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\n");
+}
+
+static void
+__diag_tok(Token *tok, char *fmt, va_list ap)
+{
+    char  *str    = tok->file->str;
+    size_t len    = tok->file->len;
+    size_t offset = tok->str - str;
+    __diag_at(str, len, offset, tok->line_nr, tok->file->path, fmt, ap);
+}
+
+void
+diag_tok(Token *tok, char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    char  *str    = tok->file->str;
+    size_t len    = tok->file->len;
+    size_t offset = tok->str - str;
+    __diag_at(str, len, offset, tok->line_nr, tok->file->path, fmt, ap);
 }
 
 void
@@ -49,7 +68,8 @@ error_at(File *file, size_t offset, size_t line_nr, char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    verror_at(file->str, file->len, offset, line_nr, file->path, fmt, ap);
+    __diag_at(file->str, file->len, offset, line_nr, file->path, fmt, ap);
+    fprintf(stderr, "\n");
     exit(1);
 }
 
@@ -58,10 +78,8 @@ error_tok(Token *tok, char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    char  *str    = tok->file->str;
-    size_t len    = tok->file->len;
-    size_t offset = tok->str - str;
-    verror_at(str, len, offset, tok->line_nr, tok->file->path, fmt, ap);
+    __diag_tok(tok, fmt, ap);
+    fprintf(stderr, "\n");
     exit(1);
 }
 
