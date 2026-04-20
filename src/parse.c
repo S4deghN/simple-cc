@@ -190,6 +190,7 @@ assign(Token **mark)
     Token *tk = *mark;
     Node *node = equality(&tk);
     if (skip(&tk, '=')) {
+        if (node->kind != ND_VAR) error_tok(node->tok, "Not an lvalue!");
         node = new_binary(ND_ASSIGN, node, assign(&tk), tk);
     }
     *mark = tk;

@@ -22,7 +22,6 @@ pop(char *arg)
 static void
 gen_addr(Node *node)
 {
-    if (node->kind != ND_VAR) error_tok(node->tok, "not an lvalue!");
     int offset = (node->name - 'a' + 1) * 8;
     printf("  lea -%d(%%rbp), %%rax\n", offset);
     // or
