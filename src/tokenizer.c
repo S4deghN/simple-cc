@@ -27,39 +27,12 @@ tk_kind_str(TokenKind kind)
     }
 }
 
-static char *
-str_find_next_newline(char *str_end, char *cursor)
-{
-    for (; cursor < str_end; ++cursor) {
-        if (*cursor == '\n') break;
-    }
-    return cursor;
-}
-
-static char *
-str_find_prev_newline(char *str_start, char *cursor)
-{
-    for (; cursor >= str_start; --cursor) {
-        if (*cursor == '\n') break;
-    }
-    return cursor;
-}
-
-void
-get_tok_line(Token *tok, char **str, int *len)
-{
-    char *line_start = str_find_prev_newline(tok->file->str, tok->str) + 1;
-    char *line_end   = str_find_next_newline(tok->file->str + tok->file->len, tok->str);
-    *str = line_start;
-    *len = line_end - line_start;
-}
-
 static void
 verror_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
     char *cursor = str + offset;
-    char *line_start = str_find_prev_newline(str,       cursor) + 1;
-    char *line_end   = str_find_next_newline(str + len, cursor);
+    char *line_start = str_find_prev(str,       cursor, '\n') + 1;
+    char *line_end   = str_find_next(str + len, cursor, '\n');
     int column = cursor - line_start;
     int line_len = line_end - line_start;
 
