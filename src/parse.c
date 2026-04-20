@@ -37,6 +37,18 @@ nd_kind_str(NodeKind kind)
 }
 
 static void
+get_stmt_str(Token *tok, char **str, int *len)
+{
+    char *line_start = str_find_prev(tok->file->str, tok->str, ';');
+    if (line_start != tok->str) line_start += 1; // skip previous ';'
+    char *line_end   = str_find_next(tok->file->str + tok->file->len, tok->str, ';') + 1;
+
+    *str = line_start;
+    *len = line_end - line_start;
+}
+
+
+static void
 _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right)
 {
     if (!node) return;
@@ -81,7 +93,7 @@ print_tree(const Node *root, char *prefix)
 
     char *line;
     int line_len;
-    get_tok_line(root->tok, &line, &line_len);
+    get_stmt_str(root->tok, &line, &line_len);
     printf("%s%.*s\n", prefix, line_len, line);
 
     _print_tree(root, prefix_buff, strlen(prefix), -1);
