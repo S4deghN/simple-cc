@@ -70,6 +70,7 @@ typedef enum {
     ND_RETURN,
     ND_NUM,
     ND_VAR,
+    ND_BLOCK,
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
@@ -98,6 +99,7 @@ struct Node {
 
     int val;
     Var *var;
+    Node *body;
 };
 
 Function *parse(Token *tok);

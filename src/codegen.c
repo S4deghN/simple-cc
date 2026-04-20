@@ -95,10 +95,22 @@ gen_expr(Node *node)
 static void
 gen_stmt(Node *node)
 {
-    expect_node_many(node, 2, ND_EXPR_STMT, ND_RETURN);
-    if (node->lhs) gen_expr(node->lhs);
-    if (node->kind == ND_RETURN) printf("  jmp .L.return\n");
-    return;
+    print_tree(node, "  // ");
+
+    switch (node->kind) {
+    case ND_BLOCK:
+        for (Node *n = node->body; n; n = n->next) gen_stmt(n);
+        break;
+    case ND_RETURN:
+        gen_expr(node->lhs);
+        printf("  jmp .L.return\n");
+        break;
+    case ND_EXPR_STMT:
+        gen_expr(node->lhs);
+        break;
+    default:
+        expect_node_many(node, 2, ND_EXPR_STMT, ND_RETURN, ND_BLOCK);
+    }
 }
 
 static void
@@ -125,10 +137,7 @@ codegen(Function *prog)
     printf("  mov %%rsp, %%rbp\n");
     printf("  sub $%d, %%rsp\n", prog->stack_size);
 
-    for (Node *n = prog->body; n; n = n->next) {
-        print_tree(n, "  // ");
-        gen_stmt(n);
-    }
+    gen_stmt(prog->body);
     assert(depth == 0);
 
     // epilogue

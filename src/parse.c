@@ -8,6 +8,7 @@
 
 Var *locals;
 
+static Node *compound_stmt(Token **tok, Token *mark);
 static Node *expr(Token **tok);
 static Node *expr_stmt(Token **tok);
 static Node *assign(Token **tok);
@@ -36,6 +37,7 @@ nd_kind_str(NodeKind kind)
         case ND_ASSIGN: return "ASSIGN";
         case ND_RETURN: return "RETURN";
         case ND_EXPR_STMT:  return "EXPR_STMT";
+        case ND_BLOCK:  return "BLOCK";
         default: return "???";
     }
 }
@@ -177,7 +179,6 @@ expect_node_many(Node *node, int n, ...)
 {
     va_list ap;
     va_start(ap, n);
-    bool matched = false;
     for (int i = 0; i < n; ++i) {
         if (node->kind == va_arg(ap, NodeKind)) {
             va_end(ap);
@@ -238,9 +239,10 @@ expect_skip(Token **tok, TokenKind kind)
     }
 }
 
-// stmt = expr-stmt
 // stmt = "return" expr ";"
+//      | "{" compound_stmt
 //      | expr-stmt
+//      | ";"
 static Node *
 stmt(Token **tok)
 {
@@ -248,7 +250,9 @@ stmt(Token **tok)
     Node *node;
 
     if (skip(tok, ';')) {
-        node = new_node(ND_EXPR_STMT, mark);
+        node = new_node(ND_BLOCK, mark);
+    } else if (skip(tok, '{')) {
+        node = compound_stmt(tok, mark);
     } else if (skip_id(tok, "return")) {
         node = new_unary(ND_RETURN, expr(tok), mark);
         expect_skip(tok, ';');
@@ -259,6 +263,23 @@ stmt(Token **tok)
     return node;
 }
 
+// compound-stmt = stmt* "}"
+static Node *
+compound_stmt(Token **tok, Token *mark)
+{
+    Node head;
+    Node *node = &head;
+
+    while (!skip(tok, '}'))
+        node = node->next = stmt(tok);
+
+    Node *block = new_node(ND_BLOCK, mark);
+    block->body = head.next;
+
+    return block;
+}
+
+// expr-stmt = expr ";"
 static Node *
 expr_stmt(Token **tok) {
     Node *node;
@@ -268,12 +289,14 @@ expr_stmt(Token **tok) {
     return node;
 }
 
+// expr = assign
 static Node *
 expr(Token **tok)
 {
     return assign(tok);
 }
 
+// assign = equality (= assign)
 static Node *
 assign(Token **tok)
 {
@@ -408,14 +431,10 @@ primary(Token **tok)
 Function *
 parse(Token *tok)
 {
-    Node head = {0};
-    Node *node = &head;
-
-    while (tok->kind != TK_EOF)
-        node = node->next = stmt(&tok);
-
+    Token *mark = tok;
+    expect_skip(&tok, '{');
     Function *func = calloc(1, sizeof(*func));
-    func->body = head.next;
+    func->body = compound_stmt(&tok, mark);
     func->locals = locals;
 
     return func;
