@@ -102,15 +102,29 @@ gen_expr(Node *node)
 static void
 gen_stmt(Node *node)
 {
+    int uniq = counter();
+
     switch (node->kind) {
+    case ND_FOR:
+        gen_stmt(node->init);
+        printf(".L.for_begin.%d:\n", uniq);
+        if (node->cond) {
+            gen_expr(node->cond);
+            printf("  cmp\t$0, %%rax\n");
+            printf("  je \t.L.for_end.%d\n", uniq);
+        }
+        gen_stmt(node->body);
+        if (node->iter) gen_expr(node->iter);
+        printf("  jmp\t.L.for_begin.%d\n", uniq);
+        printf(".L.for_end.%d:\n", uniq);
+        break;
     case ND_IF:
-        int uniq = counter();
         gen_expr(node->cond);
         printf("  cmp\t$0, %%rax\n");
-        printf("  je \t.L.endif.%d\n", uniq);
+        printf("  je \t.L.if_end.%d\n", uniq);
         gen_stmt(node->then);
         if (node->els) printf("  jmp\t.L.endelse.%d\n", uniq);
-        printf(".L.endif.%d:\n", uniq);
+        printf(".L.if_end.%d:\n", uniq);
         if (node->els) {
             gen_stmt(node->els);
             printf(".L.endelse.%d:\n", uniq);

@@ -39,6 +39,7 @@ nd_kind_str(NodeKind kind)
         case ND_EXPR_STMT:  return "EXPR_STMT";
         case ND_BLOCK:  return "BLOCK";
         case ND_IF:  return "IF";
+        case ND_FOR:  return "FOR";
         default: return "???";
     }
 }
@@ -256,18 +257,16 @@ expect_skip(Token **tok, TokenKind kind)
 
 // stmt = "return" expr ";"
 //      | "if" "(" expr ")" stmt ("else" stmt)?
+//      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
 //      | "{" compound_stmt
 //      | expr-stmt
-//      | ";"
 static Node *
 stmt(Token **tok)
 {
     Token *mark = *tok;
     Node *node;
 
-    if (skip(tok, ';')) {
-        node = new_node(ND_BLOCK, mark);
-    } else if (skip(tok, '{')) {
+    if (skip(tok, '{')) {
         node = compound_stmt(tok, mark);
     } else if (skip_id(tok, "return")) {
         node = new_unary(ND_RETURN, expr(tok), mark);
@@ -279,6 +278,19 @@ stmt(Token **tok)
         expect_skip(tok, ')');
         node->then = stmt(tok);
         if (skip_id(tok, "else")) node->els = stmt(tok);
+    } else if (skip_id(tok, "for")) {
+        node = new_node(ND_FOR, mark);
+        expect_skip(tok, '(');
+        node->init = expr_stmt(tok);
+        if (!skip(tok, ';')) {
+            node->cond = expr(tok);
+            expect_skip(tok, ';');
+        }
+        if (!skip(tok, ')')) {
+            node->iter = expr(tok);
+            expect_skip(tok, ')');
+        }
+        node->body = stmt(tok);
     } else {
         node = expr_stmt(tok);
     }
@@ -290,7 +302,7 @@ stmt(Token **tok)
 static Node *
 compound_stmt(Token **tok, Token *mark)
 {
-    Node head;
+    Node head = {0};
     Node *node = &head;
 
     while (!skip(tok, '}'))
@@ -302,13 +314,19 @@ compound_stmt(Token **tok, Token *mark)
     return block;
 }
 
-// expr-stmt = expr ";"
+// expr-stmt = expr? ";"
 static Node *
 expr_stmt(Token **tok) {
     Node *node;
-    node = expr(tok);
-    node = new_unary(ND_EXPR_STMT, node, *tok);
-    expect_skip(tok, ';');
+    Token *mark = *tok;
+
+    if (skip(tok, ';')) {
+         node = new_node(ND_BLOCK, mark);
+    } else {
+        node = expr(tok);
+        node = new_unary(ND_EXPR_STMT, node, *tok);
+        expect_skip(tok, ';');
+    }
     return node;
 }
 
