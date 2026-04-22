@@ -2,10 +2,14 @@
 #define CC_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 //
 // utils.c
 //
+
+#define swap(a, b) do { typeof(a) tmp = (a); (a) = (b); (b) = tmp; } while(0)
+#define double_case(a, b) ((((int)(a)) << 8) | (int)(b))
 
 typedef struct {
     char *path;
@@ -61,17 +65,17 @@ typedef enum {
     ND_MUL,
     ND_DIV,
     ND_NEG,
-    ND_ADDR,
-    ND_DEREF,
+    ND_ASSIGN,
     ND_EQ,
     ND_NE,
     ND_LT,
     ND_LTE,
-    ND_ASSIGN,
-    ND_EXPR_STMT,
-    ND_RETURN,
     ND_NUM,
     ND_VAR,
+    ND_ADDR,
+    ND_DEREF,
+    ND_EXPR_STMT,
+    ND_RETURN,
     ND_BLOCK,
     ND_IF,
     ND_FOR, // "for" or "while"
@@ -79,6 +83,7 @@ typedef enum {
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
+typedef struct Type Type;
 typedef struct Node Node;
 
 typedef struct Var Var;
@@ -98,18 +103,12 @@ struct Function {
 struct Node {
     NodeKind kind;
     Token *tok;
+    Type *ty;
     Node *next;
+
+    // Ordered expr
     Node *lhs;
     Node *rhs;
-
-    // Number
-    int val;
-
-    // Variable
-    Var *var;
-
-    // Block
-    Node *body;
 
     // If and For statement
     Node *cond;
@@ -117,12 +116,40 @@ struct Node {
     Node *els;
     Node *init;
     Node *iter;
+
+    // Block
+    Node *body;
+
+    // Number
+    int val;
+
+    // Variable
+    Var *var;
 };
 
 Function *parse(Token *tok);
 void expect_node(Node *node, NodeKind kind);
 void expect_node_many(Node *node, int n, ...);
 void print_tree(const Node *root, char *prefix);
+
+//
+// type.c
+//
+
+typedef enum {
+    TY_INT,
+    TY_PTR,
+} TypeKind;
+
+struct Type {
+    TypeKind kind;
+    Type *base;
+};
+
+extern Type *ty_int;
+
+bool type_is(Node *node, TypeKind kind);
+void add_type(Node *node);
 
 //
 // codegen.c

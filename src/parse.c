@@ -177,6 +177,14 @@ new_num(Token *tok)
 }
 
 static Node *
+new_implicit_num(Token *tok, int val)
+{
+    Node *node = new_node(ND_NUM, tok);
+    node->val = val;
+    return node;
+}
+
+static Node *
 new_var_node(Token *tok)
 {
     Var *var = find_var(tok);
@@ -189,6 +197,57 @@ new_var_node(Token *tok)
     Node *node = new_node(ND_VAR, tok);
     node->var = var;
     return node;
+}
+
+// Overloads '+' for pointer arithmatic.
+static Node *
+new_add(Node *lhs, Node *rhs, Token *tok) {
+    add_type(lhs);
+    add_type(rhs);
+
+    switch (double_case(lhs->ty->kind, rhs->ty->kind)) {
+    case double_case(TY_INT, TY_INT):
+        return new_binary(ND_ADD, lhs, rhs, tok);
+    case double_case(TY_INT, TY_PTR):
+        swap(lhs, rhs);
+        // fallthrough
+    case double_case(TY_PTR, TY_INT):
+        rhs = new_binary(ND_MUL, rhs, new_implicit_num(tok, 8), tok);
+        return new_binary(ND_ADD, lhs, rhs, tok);
+    case double_case(TY_PTR, TY_PTR):
+        // TODO: Add type printing and better diagnostics.
+        error_tok(tok, "Invalid operation");
+    }
+
+    return NULL;
+}
+
+static Node *
+new_sub(Node *lhs, Node *rhs, Token *tok) {
+    add_type(lhs);
+    add_type(rhs);
+
+    switch (double_case(lhs->ty->kind, rhs->ty->kind)) {
+    case double_case(TY_INT, TY_INT):
+        return new_binary(ND_SUB, lhs, rhs, tok);
+    case double_case(TY_PTR, TY_PTR): {
+        Node *node = new_binary(ND_SUB, lhs, rhs, tok);
+        node->ty = ty_int;
+        return new_binary(ND_DIV, node, new_implicit_num(tok, 8), tok);
+    }
+    case double_case(TY_PTR, TY_INT): {
+        rhs = new_binary(ND_MUL, rhs, new_implicit_num(tok, 8), tok);
+        add_type(rhs);
+        Node *node = new_binary(ND_SUB, lhs, rhs, tok);
+        node->ty = lhs->ty;
+        return node;
+    }
+    case double_case(TY_INT, TY_PTR):
+        // TODO: Add type printing and better diagnostics.
+        error_tok(tok, "Invalid operation");
+    }
+
+    return NULL;
 }
 
 void
@@ -337,8 +396,10 @@ compound_stmt(Token **tok, Token *mark)
     Node head = {0};
     Node *node = &head;
 
-    while (!skip(tok, '}'))
+    while (!skip(tok, '}')) {
         node = node->next = stmt(tok);
+        add_type(node);
+    }
 
     Node *block = new_node(ND_BLOCK, mark);
     block->body = head.next;
@@ -443,11 +504,11 @@ add(Token **tok)
     for (;;) {
         Token *mark = *tok;
         if (skip(tok, '+')) {
-            node = new_binary(ND_ADD, node, mul(tok), mark);
+            node = new_add(node, mul(tok), mark);
             continue;
         }
         if (skip(tok, '-')) {
-            node = new_binary(ND_SUB, node, mul(tok), mark);
+            node = new_sub(node, mul(tok), mark);
             continue;
         }
         return node;
