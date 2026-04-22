@@ -26,14 +26,24 @@ pop(char *arg)
     depth--;
 }
 
+static void gen_expr(Node *node);
+
 static void
 gen_addr(Node *node)
 {
-    assert(node->kind == ND_VAR);
-    printf("  lea -%d(%%rbp), %%rax\n", node->var->stack_offset);
-    // or
-    // printf("  mov\t%%rbp, %%rax\n");
-    // printf("  sub\t$%d, %%rax\n", node->var->stack_offset);
+    switch (node->kind) {
+    case ND_VAR:
+        printf("  lea -%d(%%rbp), %%rax\n", node->var->stack_offset);
+        // or
+        // printf("  mov\t%%rbp, %%rax\n");
+        // printf("  sub\t$%d, %%rax\n", node->var->stack_offset);
+        break;
+    case ND_DEREF:
+        gen_expr(node->lhs);
+        break;
+    default:
+        expect_node_many(node, 2, ND_VAR, ND_DEREF);
+    }
 }
 
 static void
@@ -49,6 +59,15 @@ gen_expr(Node *node)
     } else if (node->kind == ND_VAR) {
         gen_addr(node);
         printf("  mov\t(%%rax), %%rax\n");
+        return;
+    } else if (node->kind == ND_DEREF) {
+        gen_expr(node->lhs); // first load var from stack to rax.
+        printf("  mov\t(%%rax), %%rax\n");
+        return;
+    } else if (node->kind == ND_ADDR) {
+        // NOTE: we could also check for lvalueness of lhs here instead of the parser.
+        // same for ND_ASSIGN.
+        gen_addr(node->lhs);
         return;
     } else if (node->kind == ND_ASSIGN) {
         gen_addr(node->lhs);

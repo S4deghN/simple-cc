@@ -82,4 +82,14 @@ assert 10 '{ a = 0; while(a < 10) { a = a + 1; } return a; }'
 assert 0  '{ while(0) { return 10; } return 0; }'
 assert 10 '{ while(1) { return 10; } return 0; }'
 
+assert 9 '{a = 9; b = &a; c = &b; return **c;}'
+assert 3 '{ x=3; return *&x; }'
+assert 3 '{ x=3; y=&x; z=&y; return **z; }'
+assert 5 '{ x=3; y=5; return *(&x+8); }'
+assert 3 '{ x=3; y=5; return *(&y-8); }'
+assert 5 '{ x=3; y=&x; *y=5; return x; }'
+assert 7 '{ x=3; y=5; *(&x+8)=7; return y; }'
+assert 7 '{ x=3; y=5; *(&y-8)=7; return x; }'
+assert 4 '{ x=3; y=4; z=&*(&x + 8); return *z;}'
+
 echo OK

@@ -40,6 +40,9 @@ nd_kind_str(NodeKind kind)
         case ND_BLOCK:  return "BLOCK";
         case ND_IF:  return "IF";
         case ND_FOR:  return "FOR";
+        case ND_DO:  return "DO";
+        case ND_ADDR:  return "ADDR";
+        case ND_DEREF:  return "DEREF";
         default: return "???";
     }
 }
@@ -123,6 +126,7 @@ print_tree(const Node *root, char *prefix)
         if (root->cond) _print_tree(root->cond, prefix_buff, p_cur, -1, NULL);
         if (root->iter) _print_tree(root->iter, prefix_buff, p_cur, -1, NULL);
         if (root->body) _print_tree(root->body, prefix_buff, p_cur, -1, NULL);
+        break;
     default:
         _print_tree(root, prefix_buff, strlen(prefix), -1, NULL);
     }
@@ -238,6 +242,14 @@ skip(Token **tok, TokenKind kind)
     return false;
 }
 
+static void
+expect_skip(Token **tok, TokenKind kind)
+{
+    if (!skip(tok, kind)) {
+        error_tok(*tok, "Expected '%s', got '%s'", tk_kind_str(kind), tk_kind_str((*tok)->kind));
+    }
+}
+
 static bool
 skip_id(Token **tok, char *name)
 {
@@ -250,14 +262,6 @@ skip_id(Token **tok, char *name)
         return true;
     }
     return false;
-}
-
-static void
-expect_skip(Token **tok, TokenKind kind)
-{
-    if (!skip(tok, kind)) {
-        error_tok(*tok, "Expected '%s', got '%s'", tk_kind_str(kind), tk_kind_str((*tok)->kind));
-    }
 }
 
 static void
@@ -373,8 +377,14 @@ assign(Token **tok)
 
     Token *mark = *tok;
     if (skip(tok, '=')) {
-        if (node->kind != ND_VAR) error_tok(mark, "Not an lvalue to the left of assignment!");
-        node = new_binary(ND_ASSIGN, node, assign(tok), mark);
+        switch (node->kind) {
+            case ND_VAR:
+            case ND_DEREF:
+                node = new_binary(ND_ASSIGN, node, assign(tok), mark);
+                break;
+            default:
+                error_tok(mark, "Not an lvalue to the left of assignment!");
+        }
     }
 
     return node;
@@ -462,6 +472,7 @@ mul(Token **tok)
     }
 }
 
+// unary = ("+" | "-" | "&" | "*") unary
 static Node *
 unary(Token **tok)
 {
@@ -471,6 +482,17 @@ unary(Token **tok)
         node = unary(tok);
     } else if (skip(tok, '-')) {
         node = new_unary(ND_NEG, unary(tok), mark);
+    } else if (skip(tok, '*')) {
+        node = new_unary(ND_DEREF, unary(tok), mark);
+    } else if (skip(tok, '&')) {
+        node = new_unary(ND_ADDR, unary(tok), mark);
+        switch (node->lhs->kind) {
+        case ND_VAR:
+        case ND_DEREF:
+            break;
+        default:
+            error_tok(mark, "Lvalue is required as unary & operand!");
+        }
     } else {
         node = primary(tok);
     }
@@ -501,6 +523,7 @@ Function *
 parse(Token *tok)
 {
     Token *mark = tok;
+    expect(tok, '{'); // just to shut up the warnings of unused function.
     expect_skip(&tok, '{');
     Function *prog = calloc(1, sizeof(*prog));
     prog->body = compound_stmt(&tok, mark);
