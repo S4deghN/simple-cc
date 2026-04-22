@@ -106,7 +106,7 @@ gen_stmt(Node *node)
 
     switch (node->kind) {
     case ND_FOR:
-        gen_stmt(node->init);
+        if (node->init) gen_stmt(node->init);
         printf(".L.for_begin.%d:\n", uniq);
         if (node->cond) {
             gen_expr(node->cond);

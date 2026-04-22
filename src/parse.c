@@ -118,6 +118,11 @@ print_tree(const Node *root, char *prefix)
         _print_tree(root->then, prefix_buff, p_cur + 3, -1, "THEN");
         _print_tree(root->els, prefix_buff, p_cur + 3, -1, "ELSE");
         break;
+    case ND_FOR:
+        if (root->init) _print_tree(root->init, prefix_buff, p_cur, -1, NULL);
+        if (root->cond) _print_tree(root->cond, prefix_buff, p_cur, -1, NULL);
+        if (root->iter) _print_tree(root->iter, prefix_buff, p_cur, -1, NULL);
+        if (root->body) _print_tree(root->body, prefix_buff, p_cur, -1, NULL);
     default:
         _print_tree(root, prefix_buff, strlen(prefix), -1, NULL);
     }
@@ -258,6 +263,7 @@ expect_skip(Token **tok, TokenKind kind)
 // stmt = "return" expr ";"
 //      | "if" "(" expr ")" stmt ("else" stmt)?
 //      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
+//      | "while" "(" expr ")" stmt
 //      | "{" compound_stmt
 //      | expr-stmt
 static Node *
@@ -290,6 +296,12 @@ stmt(Token **tok)
             node->iter = expr(tok);
             expect_skip(tok, ')');
         }
+        node->body = stmt(tok);
+    } else if (skip_id(tok, "while")) {
+        node = new_node(ND_FOR, mark);
+        expect_skip(tok, '(');
+        node->cond = expr(tok);
+        expect_skip(tok, ')');
         node->body = stmt(tok);
     } else {
         node = expr_stmt(tok);
@@ -337,7 +349,7 @@ expr(Token **tok)
     return assign(tok);
 }
 
-// assign = equality (= assign)
+// assign = equality (= assign)?
 static Node *
 assign(Token **tok)
 {
@@ -345,7 +357,7 @@ assign(Token **tok)
 
     Token *mark = *tok;
     if (skip(tok, '=')) {
-        if (node->kind != ND_VAR) error_tok(node->tok, "Not an lvalue!");
+        if (node->kind != ND_VAR) error_tok(mark, "Not an lvalue to the left of assignment!");
         node = new_binary(ND_ASSIGN, node, assign(tok), mark);
     }
 

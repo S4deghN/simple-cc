@@ -77,4 +77,9 @@ assert 3 '{ for (;;) {return 3;} return 5; }'
 assert 3 '{ for (;;) {return 3;} return 5; }'
 assert 9 '{ for (a = 0; a < 9; a = a + 1) {} return a; }'
 
+assert 10 '{ a = 0; while((a = a+1) < 10) {} return a; }'
+assert 10 '{ a = 0; while(a < 10) { a = a + 1; } return a; }'
+assert 0  '{ while(0) { return 10; } return 0; }'
+assert 10 '{ while(1) { return 10; } return 0; }'
+
 echo OK
