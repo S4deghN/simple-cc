@@ -260,6 +260,14 @@ expect_skip(Token **tok, TokenKind kind)
     }
 }
 
+static void
+expect_skip_id(Token **tok, char *name)
+{
+    if (!skip_id(tok, name)) {
+        error_tok(*tok, "Expected '%s', got '%s'", name, tk_kind_str((*tok)->kind));
+    }
+}
+
 // stmt = "return" expr ";"
 //      | "if" "(" expr ")" stmt ("else" stmt)?
 //      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
@@ -296,13 +304,21 @@ stmt(Token **tok)
             node->iter = expr(tok);
             expect_skip(tok, ')');
         }
-        node->body = stmt(tok);
+        node->then = stmt(tok);
     } else if (skip_id(tok, "while")) {
         node = new_node(ND_FOR, mark);
         expect_skip(tok, '(');
         node->cond = expr(tok);
         expect_skip(tok, ')');
-        node->body = stmt(tok);
+        node->then = stmt(tok);
+    } else if (skip_id(tok, "do")) {
+        node = new_node(ND_DO, mark);
+        node->then = stmt(tok);
+        expect_skip_id(tok, "while");
+        expect_skip(tok, '(');
+        node->cond = expr(tok);
+        expect_skip(tok, ')');
+        expect_skip(tok, ';');
     } else {
         node = expr_stmt(tok);
     }

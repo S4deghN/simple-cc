@@ -72,7 +72,8 @@ typedef enum {
     ND_VAR,
     ND_BLOCK,
     ND_IF,
-    ND_FOR,
+    ND_FOR, // "for" or "while"
+    ND_DO, // "do while"
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
@@ -108,7 +109,7 @@ struct Node {
     // Block
     Node *body;
 
-    // If and Forjstatement
+    // If and For statement
     Node *cond;
     Node *then;
     Node *els;

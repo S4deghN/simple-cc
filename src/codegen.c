@@ -113,10 +113,19 @@ gen_stmt(Node *node)
             printf("  cmp\t$0, %%rax\n");
             printf("  je \t.L.for_end.%d\n", uniq);
         }
-        gen_stmt(node->body);
+        gen_stmt(node->then);
         if (node->iter) gen_expr(node->iter);
         printf("  jmp\t.L.for_begin.%d\n", uniq);
         printf(".L.for_end.%d:\n", uniq);
+        break;
+    case ND_DO:
+        printf(".L.do_begin.%d:\n", uniq);
+        gen_stmt(node->then);
+        gen_expr(node->cond);
+        printf("  cmp\t$0, %%rax\n");
+        printf("  je \t.L.do_end.%d\n", uniq);
+        printf("  jmp\t.L.do_begin.%d\n", uniq);
+        printf(".L.do_end.%d:\n", uniq);
         break;
     case ND_IF:
         gen_expr(node->cond);
