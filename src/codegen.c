@@ -49,33 +49,43 @@ gen_addr(Node *node)
 static void
 gen_expr(Node *node)
 {
-    if (node->kind == ND_NUM) {
+    switch (node->kind) {
+    case ND_NUM:
         printf("  mov\t$%d, %%rax\n", node->val);
         return;
-    } else if (node->kind == ND_NEG) {
+    case ND_NEG:
         gen_expr(node->lhs);
         printf("  neg\t%%rax\n");
         return;
-    } else if (node->kind == ND_VAR) {
+    case ND_VAR:
         gen_addr(node);
         printf("  mov\t(%%rax), %%rax\n");
         return;
-    } else if (node->kind == ND_DEREF) {
+    case ND_DEREF:
         gen_expr(node->lhs); // first load var from stack to rax.
         printf("  mov\t(%%rax), %%rax\n");
         return;
-    } else if (node->kind == ND_ADDR) {
+    case ND_ADDR:
         // NOTE: we could also check for lvalueness of lhs here instead of the parser.
         // same for ND_ASSIGN.
         gen_addr(node->lhs);
         return;
-    } else if (node->kind == ND_ASSIGN) {
+    case ND_ASSIGN:
         gen_addr(node->lhs);
         push();
         gen_expr(node->rhs);
         pop("%rdi");
         printf("  mov\t%%rax, (%%rdi)\n");
         return;
+    case ND_FUNCALL:
+        printf("  mov\t$0, %%rax\n");
+        printf("  call\t%.*s\n", node->tok->len, node->tok->str);
+        return;
+    default:
+        if (!node->rhs || !node->lhs) {
+            print_tree(node, "");
+            assert("This node can not be handles as lhs, rhs expresion!");
+        }
     }
 
     gen_expr(node->rhs);

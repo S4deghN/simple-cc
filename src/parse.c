@@ -44,6 +44,7 @@ nd_kind_str(NodeKind kind)
         case ND_DO:  return "DO";
         case ND_ADDR:  return "ADDR";
         case ND_DEREF:  return "DEREF";
+        case ND_FUNCALL:  return "FUNCALL";
         default: return "???";
     }
 }
@@ -649,6 +650,8 @@ unary(Token **tok)
     return node;
 }
 
+// primary = "(" expr ")" | ident args? | num
+// args = "(" ")"
 static Node *
 primary(Token **tok)
 {
@@ -657,7 +660,12 @@ primary(Token **tok)
     if (skip(tok, TK_NUM)) {
         node = new_num(mark);
     } else if (skip(tok, TK_ID)) {
-        node = var_node(mark);
+        if (skip(tok, '(')) {
+            node = new_node(ND_FUNCALL, mark);
+            expect_skip(tok, ')');
+        } else {
+            node = var_node(mark);
+        }
     } else if (skip(tok, '(')) {
         node = expr(tok);
         expect_skip(tok, ')');

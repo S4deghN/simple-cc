@@ -72,6 +72,7 @@ typedef enum {
     ND_LTE,
     ND_NUM,
     ND_VAR,
+    ND_FUNCALL,
     ND_ADDR,
     ND_DEREF,
     ND_EXPR_STMT,

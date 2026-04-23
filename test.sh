@@ -7,7 +7,7 @@ assert() {
   input="$2"
 
   $compiler "$input" > tmp.s || exit
-  gcc -static -o tmp tmp.s
+  gcc -static -o tmp tmp.s tmp2.o
   ./tmp
   actual="$?"
 
@@ -19,6 +19,11 @@ assert() {
     exit 1
   fi
 }
+
+cat <<EOF | gcc -xc -c -o tmp2.o -
+int ret3() { return 3; }
+int ret5() { return 5; }
+EOF
 
 assert 0  '{ return 0; }'
 assert 42 '{ return 42; }'
@@ -94,5 +99,8 @@ assert 5 '{ int x=3; int *y=&x; *y=5; return x; }'
 
 assert 8 '{ int x, y; x=3; y=5; return x+y; }'
 assert 8 '{ int x=3, y=5; return x+y; }'
+
+assert 3 '{ return ret3(); }'
+assert 5 '{ return ret5(); }'
 
 echo OK
