@@ -8,6 +8,7 @@
 
 Var *locals;
 
+static Node *declaration(Token **tok);
 static Node *compound_stmt(Token **tok, Token *mark);
 static Node *expr(Token **tok);
 static Node *expr_stmt(Token **tok);
@@ -69,18 +70,19 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
     char *add;
     char *fmt;
     if (is_right == -1) { // root
-        fmt = "%.*s%.*s\n";
+        fmt = "%.*s%.*s: %s\n";
         add = "";
     } else if (is_right) { // right branch
-        fmt = "%.*s├─ %.*s\n";
+        fmt = "%.*s├─ %.*s: %s\n";
         add = "│  ";
     } else { // left branch
-        fmt = "%.*s└─ %.*s\n";
+        fmt = "%.*s└─ %.*s: %s\n";
         add = "   ";
     }
 
     char *node_str;
     int node_str_len;
+    char *type_str = node->ty ? ty_kind_str(node->ty->kind) : "ø";
     if (node->kind == ND_NUM || node->kind == ND_VAR) {
         node_str = node->tok->str;
         node_str_len = node->tok->len;
@@ -91,7 +93,7 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
         node_str = nd_kind_str(node->kind);
         node_str_len = strlen(node_str);
     }
-    printf(fmt, prefix_cursor, prefix_buff, node_str_len, node_str);
+    printf(fmt, prefix_cursor, prefix_buff, node_str_len, node_str, type_str);
 
     memcpy(&prefix_buff[prefix_cursor], add, strlen(add));
     prefix_cursor += strlen(add);
@@ -127,6 +129,11 @@ print_tree(const Node *root, char *prefix)
         if (root->iter) _print_tree(root->iter, prefix_buff, p_cur, -1, NULL);
         if (root->body) _print_tree(root->body, prefix_buff, p_cur, -1, NULL);
         break;
+    case ND_BLOCK:
+        for (Node *n = root->body; n; n = n->next) {
+            _print_tree(n, prefix_buff, p_cur, -1, NULL);
+        }
+        break;
     default:
         _print_tree(root, prefix_buff, strlen(prefix), -1, NULL);
     }
@@ -137,7 +144,9 @@ find_var(Token *tok)
 {
     for (Var *var = locals; var; var = var->next) {
         if (var->tok->len == tok->len &&
-            strncmp(var->tok->str,  tok->str, tok->len) == 0) return var;
+            strncmp(var->tok->str,  tok->str, tok->len) == 0) {
+            return var;
+        }
     }
     return NULL;
 }
@@ -184,22 +193,39 @@ new_implicit_num(Token *tok, int val)
     return node;
 }
 
+static Var *
+new_var(Token *tok, Type *ty)
+{
+    if (find_var(tok)) error_tok(tok, "redefinition of var");
+
+    Var *var = calloc(1, sizeof(*var));
+    var->tok = tok;
+    var->next = locals;
+    var->ty = ty;
+    locals = var;
+    return var;
+}
+
 static Node *
-new_var_node(Token *tok)
+new_var_node(Token *tok, Type *ty)
+{
+    Node *node = new_node(ND_VAR, tok);
+    node->var = new_var(tok, ty);
+    node->ty = ty;
+    return node;
+}
+
+static Node *
+var_node(Token *tok)
 {
     Var *var = find_var(tok);
-    if (!var) {
-        var = calloc(1, sizeof(*var));
-        var->tok = tok;
-        var->next = locals;
-        locals = var;
-    }
+    if (!var) error_tok(tok, "undefined variable");
     Node *node = new_node(ND_VAR, tok);
     node->var = var;
     return node;
 }
 
-// Overloads '+' for pointer arithmatic.
+// Overloads '+' for pointer arithmetic.
 static Node *
 new_add(Node *lhs, Node *rhs, Token *tok) {
     add_type(lhs);
@@ -222,6 +248,7 @@ new_add(Node *lhs, Node *rhs, Token *tok) {
     return NULL;
 }
 
+// Overloads '-' for pointer arithmetic.
 static Node *
 new_sub(Node *lhs, Node *rhs, Token *tok) {
     add_type(lhs);
@@ -257,7 +284,6 @@ expect_node(Node *node, NodeKind kind)
         error_tok(node->tok, "Expected '%s', got '%s'", nd_kind_str(kind), nd_kind_str(node->kind));
 }
 
-
 void
 expect_node_many(Node *node, int n, ...)
 {
@@ -280,7 +306,6 @@ expect_node_many(Node *node, int n, ...)
     fprintf(stderr, ", got '%s'\n", nd_kind_str(node->kind));
     error("");
 }
-
 
 static void
 expect(Token *tok, TokenKind kind)
@@ -310,12 +335,18 @@ expect_skip(Token **tok, TokenKind kind)
 }
 
 static bool
+tok_match(Token *tok, char *name)
+{
+    return strlen(name) == (size_t)tok->len && strncmp(name, tok->str, tok->len) == 0;
+}
+
+static bool
 skip_id(Token **tok, char *name)
 {
     Token *tk = *tok;
 
     if (tk->kind != TK_ID) return false;
-    if (strlen(name) == (size_t)tk->len && strncmp(name, tk->str, tk->len) == 0) {
+    if (tok_match(tk, name)) {
         tk = tk->next;
         *tok = tk;
         return true;
@@ -389,7 +420,62 @@ stmt(Token **tok)
     return node;
 }
 
-// compound-stmt = stmt* "}"
+// declspec = "int"
+static Type *
+declspec(Token **tok)
+{
+    expect_skip_id(tok, "int");
+    return ty_int;
+}
+
+// declarator = "*"* ident
+static Type *
+declarator(Token **tok, Type *ty)
+{
+    while(skip(tok, '*')) {
+        ty = pointer_to(ty);
+    }
+
+    return ty;
+}
+
+// declaration = declspec (declarator (expr)? ("," declarator (expr)?)*)? ";"
+static Node *
+declaration(Token **tok) 
+{
+    Node head = {0};
+    Node *node = &head;
+
+    Token *mark = *tok;
+
+    Type *base_type = declspec(tok);
+
+    int not_first_time = 0;
+    while (!skip(tok, ';')) {
+        if (not_first_time++) expect_skip(tok, ',');
+
+        Type *ty = declarator(tok, base_type);
+
+        Token *varname = *tok;
+        expect_skip(tok, TK_ID);
+
+        Token *mark = *tok;
+        if (skip(tok, '=')) {
+            Node *lhs = new_var_node(varname, ty);
+            Node *rhs = expr(tok);
+            Node *root = new_binary(ND_ASSIGN, lhs, rhs, mark);
+            node = node->next = new_unary(ND_EXPR_STMT, root, *tok);
+        } else {
+            new_var(varname, ty);
+        }
+    }
+
+    Node *block = new_node(ND_BLOCK, mark);
+    block->body = head.next;
+    return block;
+}
+
+// compound-stmt = (declaration | stmt)* "}"
 static Node *
 compound_stmt(Token **tok, Token *mark)
 {
@@ -397,8 +483,10 @@ compound_stmt(Token **tok, Token *mark)
     Node *node = &head;
 
     while (!skip(tok, '}')) {
-        node = node->next = stmt(tok);
+        if (tok_match(*tok, "int")) node = node->next = declaration(tok);
+        else                        node = node->next = stmt(tok);
         add_type(node);
+        print_tree(node, "// ");
     }
 
     Node *block = new_node(ND_BLOCK, mark);
@@ -569,7 +657,7 @@ primary(Token **tok)
     if (skip(tok, TK_NUM)) {
         node = new_num(mark);
     } else if (skip(tok, TK_ID)) {
-        node = new_var_node(mark);
+        node = var_node(mark);
     } else if (skip(tok, '(')) {
         node = expr(tok);
         expect_skip(tok, ')');
@@ -589,11 +677,6 @@ parse(Token *tok)
     Function *prog = calloc(1, sizeof(*prog));
     prog->body = compound_stmt(&tok, mark);
     prog->locals = locals;
-
-    // Program is a function with a body that is a block with a body
-    for (Node *n = prog->body->body; n; n = n->next) {
-        print_tree(n, "  // ");
-    }
 
     return prog;
 }

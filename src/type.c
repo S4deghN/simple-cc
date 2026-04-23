@@ -1,8 +1,20 @@
 #include "cc.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
 Type *ty_int = &(Type){TY_INT};
+
+char *
+ty_kind_str(TypeKind kind)
+{
+    switch (kind) {
+        case TY_INT: return "INT";
+        case TY_PTR: return "PTR";
+        default:
+    }
+    return "???";
+}
 
 bool
 is_type(Node *node, TypeKind kind)
@@ -46,18 +58,19 @@ add_type(Node *node)
     case ND_LT:
     case ND_LTE:
     case ND_NUM:
-    case ND_VAR:
         node->ty = ty_int;
+        return;
+    case ND_VAR:
+        node->ty = node->var->ty;
         return;
     case ND_ADDR:
         node->ty = pointer_to(node->lhs->ty);
         return;
     case ND_DEREF:
-        if (is_type(node->lhs, TY_PTR)) {
-            node->ty = node->lhs->ty->base;
-        } else {
-            node->ty = ty_int;
+        if (!is_type(node->lhs, TY_PTR)) {
+            error_tok(node->tok, "Invalid pointer dereference!");
         }
+        node->ty = node->lhs->ty->base;
         break;
     case ND_EXPR_STMT:
     case ND_RETURN:

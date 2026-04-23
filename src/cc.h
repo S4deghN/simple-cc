@@ -90,6 +90,7 @@ typedef struct Var Var;
 struct Var {
     Var *next;
     Token *tok;
+    Type *ty;
     int stack_offset;
 };
 
@@ -140,15 +141,18 @@ typedef enum {
     TY_INT,
     TY_PTR,
 } TypeKind;
+char *ty_kind_str(TypeKind kind);
 
 struct Type {
     TypeKind kind;
-    Type *base;
+    Type *base; // pointer
+    Token *name;
 };
 
 extern Type *ty_int;
 
 bool type_is(Node *node, TypeKind kind);
+Type *pointer_to(Type *base);
 void add_type(Node *node);
 
 //
