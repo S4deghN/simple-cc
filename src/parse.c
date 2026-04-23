@@ -64,27 +64,31 @@ get_stmt_str(Token *tok, char **str, int *len)
 
 
 static void
-_print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right, char *alt_root_name)
+_print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right, char *alt_root_name, char *wrap)
 {
     if (!node) return;
 
     char *add;
     char *fmt;
+    char *wrap_fmt;
     if (is_right == -1) { // root
         fmt = "%.*s%.*s: %s\n";
+        wrap_fmt = "%.*s%s(%.*s): %s\n";
         add = "";
     } else if (is_right) { // right branch
         fmt = "%.*s├─ %.*s: %s\n";
+        wrap_fmt = "%.*s├─ %s(%.*s): %s\n";
         add = "│  ";
     } else { // left branch
         fmt = "%.*s└─ %.*s: %s\n";
+        wrap_fmt = "%.*s└─ %s(%.*s): %s\n";
         add = "   ";
     }
 
     char *node_str;
     int node_str_len;
     char *type_str = node->ty ? ty_kind_str(node->ty->kind) : "ø";
-    if (node->kind == ND_NUM || node->kind == ND_VAR) {
+    if (node->kind == ND_NUM || node->kind == ND_VAR || node->kind == ND_FUNCALL) {
         node_str = node->tok->str;
         node_str_len = node->tok->len;
     } else if (alt_root_name) {
@@ -94,50 +98,56 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
         node_str = nd_kind_str(node->kind);
         node_str_len = strlen(node_str);
     }
-    printf(fmt, prefix_cursor, prefix_buff, node_str_len, node_str, type_str);
+
+    if (wrap)
+        printf(wrap_fmt, prefix_cursor, prefix_buff, wrap, node_str_len, node_str, type_str);
+    else
+        printf(fmt, prefix_cursor, prefix_buff, node_str_len, node_str, type_str);
 
     memcpy(&prefix_buff[prefix_cursor], add, strlen(add));
     prefix_cursor += strlen(add);
 
-    // Recurse: right then left so right appears above left
-    _print_tree(node->rhs, prefix_buff, prefix_cursor, 1, NULL);
-    _print_tree(node->lhs, prefix_buff, prefix_cursor, 0, NULL);
+    switch (node->kind) {
+    case ND_IF:
+        _print_tree(node->cond, prefix_buff, prefix_cursor, 1, NULL, "COND");
+        _print_tree(node->then, prefix_buff, prefix_cursor, 1, NULL, "THEN");
+        _print_tree(node->els,  prefix_buff, prefix_cursor, 1, NULL, "ELSE");
+        break;
+    case ND_FOR:
+        if (node->init) _print_tree(node->init, prefix_buff, prefix_cursor, 1, NULL, "INIT");
+        if (node->cond) _print_tree(node->cond, prefix_buff, prefix_cursor, 1, NULL, "COND");
+        if (node->iter) _print_tree(node->iter, prefix_buff, prefix_cursor, 1, NULL, "ITER");
+        if (node->body) _print_tree(node->body, prefix_buff, prefix_cursor, 1, NULL, "BODY");
+        break;
+    case ND_BLOCK:
+        for (Node *n = node->body; n; n = n->next) {
+            _print_tree(n, prefix_buff, prefix_cursor, 1, NULL, NULL);
+        }
+        break;
+    case ND_FUNCALL:
+        for (Node *n = node->args; n; n = n->next) {
+            _print_tree(n, prefix_buff, prefix_cursor, 1, NULL, NULL);
+        }
+        break;
+    default:
+        // Recurse: right then left so right appears above left
+        _print_tree(node->rhs, prefix_buff, prefix_cursor, 1, NULL, NULL);
+        _print_tree(node->lhs, prefix_buff, prefix_cursor, 0, NULL, NULL);
+    }
 }
 
 void
 print_tree(const Node *root, char *prefix)
 {
-    char prefix_buff[256]; // must be big enough or segfault
-    memcpy(prefix_buff, prefix, strlen(prefix));
-    size_t p_cur = strlen(prefix);
-
     char *line;
     int line_len;
     get_stmt_str(root->tok, &line, &line_len);
     printf("%s%.*s\n", prefix, line_len, line);
 
-    switch (root->kind) {
-    case ND_IF:
-        printf("%sIF─┐\n", prefix);
-        memcpy(prefix_buff + p_cur, "   ", 3);
-        _print_tree(root->cond, prefix_buff, p_cur + 3, -1, NULL);
-        _print_tree(root->then, prefix_buff, p_cur + 3, -1, "THEN");
-        _print_tree(root->els, prefix_buff, p_cur + 3, -1, "ELSE");
-        break;
-    case ND_FOR:
-        if (root->init) _print_tree(root->init, prefix_buff, p_cur, -1, NULL);
-        if (root->cond) _print_tree(root->cond, prefix_buff, p_cur, -1, NULL);
-        if (root->iter) _print_tree(root->iter, prefix_buff, p_cur, -1, NULL);
-        if (root->body) _print_tree(root->body, prefix_buff, p_cur, -1, NULL);
-        break;
-    case ND_BLOCK:
-        for (Node *n = root->body; n; n = n->next) {
-            _print_tree(n, prefix_buff, p_cur, -1, NULL);
-        }
-        break;
-    default:
-        _print_tree(root, prefix_buff, strlen(prefix), -1, NULL);
-    }
+    char prefix_buff[256]; // must be big enough or segfault
+    memcpy(prefix_buff, prefix, strlen(prefix));
+
+    _print_tree(root, prefix_buff, strlen(prefix), -1, NULL, NULL);
 }
 
 static Var *
@@ -650,8 +660,25 @@ unary(Token **tok)
     return node;
 }
 
-// primary = "(" expr ")" | ident args? | num
-// args = "(" ")"
+// funcall = (expr ("," expr)*)?
+static Node *
+funcall(Token **tok, Token *mark)
+{
+    Node head = {0};
+    Node *node = &head;
+
+    int not_first_time = 0;
+    while (!skip(tok, ')')) {
+        if (not_first_time++) expect_skip(tok, ',');
+        node = node->next = expr(tok);
+    }
+
+    node = new_node(ND_FUNCALL, mark);
+    node->args = head.next;
+    return node;
+}
+
+// primary = "(" expr ")" | ident funcall-args?  | num
 static Node *
 primary(Token **tok)
 {
@@ -661,8 +688,7 @@ primary(Token **tok)
         node = new_num(mark);
     } else if (skip(tok, TK_ID)) {
         if (skip(tok, '(')) {
-            node = new_node(ND_FUNCALL, mark);
-            expect_skip(tok, ')');
+            node = funcall(tok, mark);
         } else {
             node = var_node(mark);
         }

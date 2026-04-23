@@ -4,6 +4,8 @@
 #include <assert.h>
 
 static int depth;
+// based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
+static char *call_reg[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
 static int
 counter()
@@ -78,6 +80,15 @@ gen_expr(Node *node)
         printf("  mov\t%%rax, (%%rdi)\n");
         return;
     case ND_FUNCALL:
+        int nargs = 0;
+        for (Node *arg = node->args; arg; arg = arg->next) {
+            gen_expr(arg);
+            push();
+            nargs += 1;
+        }
+        for (int i = nargs - 1; i >= 0; --i) {
+            pop(call_reg[i]);
+        }
         printf("  mov\t$0, %%rax\n");
         printf("  call\t%.*s\n", node->tok->len, node->tok->str);
         return;

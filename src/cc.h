@@ -112,6 +112,9 @@ struct Node {
     Node *lhs;
     Node *rhs;
 
+    // Function call args
+    Node *args;
+
     // If and For statement
     Node *cond;
     Node *then;
