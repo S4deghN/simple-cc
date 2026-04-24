@@ -1,16 +1,16 @@
-objs := $(patsubst src/%.c,bin/%.o,$(wildcard src/*.c))
-headers := $(wildcard src/*.h)
+objs := $(patsubst %.c,bin/%.o,$(wildcard *.c))
+headers := $(wildcard *.h)
 
 $(info objs = $(objs))
 $(info headers = $(headers))
 $(info )
 
-CFLAGS=-g -fno-common -Wall -Wextra
+CFLAGS=-g -fno-common -Wall -Wextra -Werror=return-type
 
 bin/compiler: $(objs)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-bin/%.o: src/%.c $(headers) | bin/
+bin/%.o: %.c $(headers) | bin/
 	$(CC) $(CFLAGS) -c $< -o $@
 
 bin/:
@@ -20,4 +20,4 @@ test: bin/compiler
 	./test.sh
 
 clean:
-	rm -rf bin core.*
+	rm -rf bin core.* a.out tmp*
