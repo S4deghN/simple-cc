@@ -60,27 +60,37 @@ void error(char *fmt, ...);
 //
 
 typedef enum {
+    // expression unists/ primary expressions
+    ND_NUM,
+    ND_VAR,
+    ND_FUNCALL,
+
+    // binary operators
+    ND_ASSIGN,
     ND_ADD,
     ND_SUB,
     ND_MUL,
     ND_DIV,
     ND_NEG,
-    ND_ASSIGN,
     ND_EQ,
     ND_NE,
+    ND_GT,
+    ND_GTE,
     ND_LT,
     ND_LTE,
-    ND_NUM,
-    ND_VAR,
-    ND_FUNCALL,
+
+    // unary operators
     ND_ADDR,
     ND_DEREF,
-    ND_EXPR_STMT,
     ND_RETURN,
-    ND_BLOCK,
+
+    // code blocks
+    ND_BLOCK,      // Used in case a language constructs requires a list of operations to be executed in sequence like assignment in declaration or body of a function or the program itself. The `body` field is used as linked list of those operations.
     ND_IF,
-    ND_FOR, // "for" or "while"
-    ND_DO, // "do while"
+    ND_FOR,        // "for" or "while"
+    ND_DO,         // "do while"
+    ND_EXPR_STMT,
+    ND_DECL_VAR,
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
@@ -97,10 +107,16 @@ struct Var {
 
 typedef struct Function Function;
 struct Function {
+    Function *next;
     Node *body;
     Var *locals;
     int stack_size;
 };
+
+typedef struct {
+    Function *functions;
+    Var *globals;
+} Program;
 
 struct Node {
     NodeKind kind;
@@ -132,7 +148,7 @@ struct Node {
     Var *var;
 };
 
-Function *parse(Token *tok);
+Program *parse(Token *tok);
 void expect_node(Node *node, NodeKind kind);
 void expect_node_many(Node *node, int n, ...);
 void print_tree(const Node *root, char *prefix);

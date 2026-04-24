@@ -35,7 +35,7 @@ gen_addr(Node *node)
 {
     switch (node->kind) {
     case ND_VAR:
-        printf("  lea -%d(%%rbp), %%rax\n", node->var->stack_offset);
+        printf("  lea %d(%%rbp), %%rax\n", node->var->stack_offset);
         // or
         // printf("  mov\t%%rbp, %%rax\n");
         // printf("  sub\t$%d, %%rax\n", node->var->stack_offset);
@@ -51,7 +51,9 @@ gen_addr(Node *node)
 static void
 gen_expr(Node *node)
 {
-    switch (node->kind) {
+    NodeKind kind = node->kind;
+
+    switch (kind) {
     case ND_NUM:
         printf("  mov\t$%d, %%rax\n", node->val);
         return;
@@ -104,7 +106,7 @@ gen_expr(Node *node)
     gen_expr(node->lhs);
     pop("%rdi");
 
-    switch (node->kind) {
+    switch (kind) {
     case ND_ADD:
         printf("  add\t%%rdi, %%rax\n");
         return;
@@ -122,20 +124,19 @@ gen_expr(Node *node)
     case ND_NE:
     case ND_LT:
     case ND_LTE:
+    case ND_GT:
+    case ND_GTE:
         printf("  cmp\t%%rdi, %%rax\n");
-        if (node->kind == ND_EQ) {
-            printf("  sete\t%%al\n");
-        } else if (node->kind == ND_NE) {
-            printf("  setne\t%%al\n");
-        } else if (node->kind == ND_LT) {
-            printf("  setl\t%%al\n");
-        } else if (node->kind == ND_LTE) {
-            printf("  setle\t%%al\n");
-        }
+        if      (kind == ND_EQ)  printf("  sete\t%%al\n");
+        else if (kind == ND_NE)  printf("  setne\t%%al\n");
+        else if (kind == ND_LT)  printf("  setl\t%%al\n");
+        else if (kind == ND_LTE) printf("  setle\t%%al\n");
+        else if (kind == ND_GT)  printf("  setg\t%%al\n");
+        else if (kind == ND_GTE) printf("  setge\t%%al\n");
         printf("  movzb\t%%al, %%rax\n");
         return;
     default:
-        error("invalid expression");
+        error("codege: invalid expression");
     }
 }
 
@@ -192,25 +193,27 @@ gen_stmt(Node *node)
         gen_expr(node->lhs);
         break;
     default:
+        // gen_expr(node);
         expect_node_many(node, 3, ND_EXPR_STMT, ND_RETURN, ND_BLOCK);
     }
 }
 
 static void
-assing_locals_offset(Function *prog)
+assing_locals_offset(Function *func)
 {
     int offset = 0;
-    for (Var *var = prog->locals; var; var = var->next) {
-        offset += 8;
+    // NOTE: We expect that this list of locals is in stack order. i.e., last declared stack variable must be assigned the smallest (in magnitude) offset. (closest to the stack base)
+    for (Var *var = func->locals; var; var = var->next) {
+        offset -= 8;
         var->stack_offset = offset;
     }
-    prog->stack_size = align_to(offset, 16);
+    func->stack_size = align_to(-offset, 16);
 }
 
 void
-codegen(Function *prog)
+codegen(Function *func)
 {
-    assing_locals_offset(prog);
+    assing_locals_offset(func);
 
     printf(".global main\n");
     printf("main:\n");
@@ -218,9 +221,10 @@ codegen(Function *prog)
     // prolog
     printf("  push\t%%rbp\n");
     printf("  mov\t%%rsp, %%rbp\n");
-    printf("  sub\t$%d, %%rsp\n", prog->stack_size);
+    printf("  sub\t$%d, %%rsp\n", func->stack_size);
 
-    gen_stmt(prog->body);
+    print_tree(func->body, "  // ");
+    gen_stmt(func->body);
     assert(depth == 0);
 
     // epilogue

@@ -6,19 +6,9 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
-Var *locals;
+const int MIN_PREC = -1;
 
-static Node *declaration(Token **tok);
-static Node *compound_stmt(Token **tok, Token *mark);
-static Node *expr(Token **tok);
-static Node *expr_stmt(Token **tok);
-static Node *assign(Token **tok);
-static Node *equality(Token **tok);
-static Node *relational(Token **tok);
-static Node *add(Token **tok);
-static Node *mul(Token **tok);
-static Node *unary(Token **tok);
-static Node *primary(Token **tok);
+Var *locals;
 
 char *
 nd_kind_str(NodeKind kind)
@@ -32,6 +22,8 @@ nd_kind_str(NodeKind kind)
         case ND_NEG: return "NEG";
         case ND_LT:  return "LT";
         case ND_LTE: return "LTE";
+        case ND_GT:  return "GT";
+        case ND_GTE: return "GTE";
         case ND_EQ:  return "EQ";
         case ND_NE:  return "NE";
         case ND_VAR: return "VAR";
@@ -193,6 +185,7 @@ new_num(Token *tok)
 {
     Node *node = new_node(ND_NUM, tok);
     node->val = strtoul(tok->str, NULL, 10);
+    node->ty = ty_int;
     return node;
 }
 
@@ -211,9 +204,11 @@ new_var(Token *tok, Type *ty)
 
     Var *var = calloc(1, sizeof(*var));
     var->tok = tok;
-    var->next = locals;
     var->ty = ty;
+
+    var->next = locals;
     locals = var;
+
     return var;
 }
 
@@ -227,12 +222,21 @@ new_var_node(Token *tok, Type *ty)
 }
 
 static Node *
-var_node(Token *tok)
+var_node(Token *tok, Var *var)
 {
-    Var *var = find_var(tok);
-    if (!var) error_tok(tok, "undefined variable");
-    Node *node = new_node(ND_VAR, tok);
+    Node *node;
+
+    if (!var) {
+        var = find_var(tok);
+        if (!var) error_tok(tok, "undefined variable");
+        node = new_node(ND_VAR, tok);
+    } else {
+        node = new_node(ND_VAR, var->tok);
+    }
+
     node->var = var;
+    node->ty = var->ty;
+
     return node;
 }
 
@@ -249,6 +253,7 @@ new_add(Node *lhs, Node *rhs, Token *tok) {
         swap(lhs, rhs);
         // fallthrough
     case double_case(TY_PTR, TY_INT):
+        // printf("confirm we are here!\n");
         rhs = new_binary(ND_MUL, rhs, new_implicit_num(tok, 8), tok);
         return new_binary(ND_ADD, lhs, rhs, tok);
     case double_case(TY_PTR, TY_PTR):
@@ -286,6 +291,16 @@ new_sub(Node *lhs, Node *rhs, Token *tok) {
     }
 
     return NULL;
+}
+
+static Node *
+new_binary_with_checks(NodeKind kind, Node *left, Node *right, Token *tok)
+{
+    switch (kind) {
+        case ND_ADD: return new_add(left, right, tok);
+        case ND_SUB: return new_sub(left, right, tok);
+        default:     return new_binary(kind, left, right, tok);
+    }
 }
 
 void
@@ -330,12 +345,23 @@ skip(Token **tok, TokenKind kind)
 {
     Token *tk = *tok;
     if (tk->kind == kind) {
-        tk = tk->next;
-        *tok = tk;
+        *tok = tk->next;
         return true;
     }
     return false;
 }
+
+static bool
+skip_class(Token **tok, bool (*is_kind_class)(TokenKind kind))
+{
+    Token *tk = *tok;
+    if (is_kind_class(tk->kind)) {
+        *tok = tk->next;
+        return true;
+    }
+    return false;
+}
+
 
 static void
 expect_skip(Token **tok, TokenKind kind)
@@ -373,292 +399,60 @@ expect_skip_id(Token **tok, char *name)
     }
 }
 
-// stmt = "return" expr ";"
-//      | "if" "(" expr ")" stmt ("else" stmt)?
-//      | "for" "(" expr-stmt expr? ";" expr? ")" stmt
-//      | "while" "(" expr ")" stmt
-//      | "{" compound_stmt
-//      | expr-stmt
-static Node *
-stmt(Token **tok)
+static int
+get_precedence(Token *tok)
 {
-    Token *mark = *tok;
-    Node *node;
-
-    if (skip(tok, '{')) {
-        node = compound_stmt(tok, mark);
-    } else if (skip_id(tok, "return")) {
-        node = new_unary(ND_RETURN, expr(tok), mark);
-        expect_skip(tok, ';');
-    } else if (skip_id(tok, "if")) {
-        node = new_node(ND_IF, mark);
-        expect_skip(tok, '(');
-        node->cond = expr(tok);
-        expect_skip(tok, ')');
-        node->then = stmt(tok);
-        if (skip_id(tok, "else")) node->els = stmt(tok);
-    } else if (skip_id(tok, "for")) {
-        node = new_node(ND_FOR, mark);
-        expect_skip(tok, '(');
-        node->init = expr_stmt(tok);
-        if (!skip(tok, ';')) {
-            node->cond = expr(tok);
-            expect_skip(tok, ';');
-        }
-        if (!skip(tok, ')')) {
-            node->iter = expr(tok);
-            expect_skip(tok, ')');
-        }
-        node->then = stmt(tok);
-    } else if (skip_id(tok, "while")) {
-        node = new_node(ND_FOR, mark);
-        expect_skip(tok, '(');
-        node->cond = expr(tok);
-        expect_skip(tok, ')');
-        node->then = stmt(tok);
-    } else if (skip_id(tok, "do")) {
-        node = new_node(ND_DO, mark);
-        node->then = stmt(tok);
-        expect_skip_id(tok, "while");
-        expect_skip(tok, '(');
-        node->cond = expr(tok);
-        expect_skip(tok, ')');
-        expect_skip(tok, ';');
-    } else {
-        node = expr_stmt(tok);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
+    switch (tok->kind) {
+    case '*':
+    case '/':
+        return 100;
+    case '+':
+    case '-':
+        return 50;
+    case '<':
+    case '>':
+    case TK_GREQ:
+    case TK_LTEQ:
+        return 25;
+    case TK_EQ:
+    case TK_NOEQ:
+        return 12;
+    case '=':
+        return 6;
+    default:
+        return MIN_PREC-1;
     }
-
-    return node;
+#pragma GCC diagnostic pop
 }
 
-// declspec = "int"
-static Type *
-declspec(Token **tok)
+NodeKind
+tok_to_binary_op(Token *tok)
 {
-    expect_skip_id(tok, "int");
-    return ty_int;
-}
-
-// declarator = "*"* ident
-static Type *
-declarator(Token **tok, Type *ty)
-{
-    while(skip(tok, '*')) {
-        ty = pointer_to(ty);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
+    switch (tok->kind) {
+    case '+':     return ND_ADD;
+    case '-':     return ND_SUB;
+    case '*':     return ND_MUL;
+    case '/':     return ND_DIV;
+    case '<':     return ND_LT;
+    case '>':     return ND_GT;
+    case '=':     return ND_ASSIGN;
+    case TK_GREQ: return ND_GTE;
+    case TK_LTEQ: return ND_LTE;
+    case TK_EQ:   return ND_EQ;
+    case TK_NOEQ: return ND_NE;
+    default:
+        error_tok(tok, "Not a binary operator");
+        return -1;
     }
-
-    return ty;
+#pragma GCC diagnostic pop
 }
 
-// declaration = declspec (declarator (expr)? ("," declarator (expr)?)*)? ";"
-static Node *
-declaration(Token **tok) 
-{
-    Node head = {0};
-    Node *node = &head;
-
-    Token *mark = *tok;
-
-    Type *base_type = declspec(tok);
-
-    int not_first_time = 0;
-    while (!skip(tok, ';')) {
-        if (not_first_time++) expect_skip(tok, ',');
-
-        Type *ty = declarator(tok, base_type);
-
-        Token *varname = *tok;
-        expect_skip(tok, TK_ID);
-
-        Token *mark = *tok;
-        if (skip(tok, '=')) {
-            Node *lhs = new_var_node(varname, ty);
-            Node *rhs = expr(tok);
-            Node *root = new_binary(ND_ASSIGN, lhs, rhs, mark);
-            node = node->next = new_unary(ND_EXPR_STMT, root, *tok);
-        } else {
-            new_var(varname, ty);
-        }
-    }
-
-    Node *block = new_node(ND_BLOCK, mark);
-    block->body = head.next;
-    return block;
-}
-
-// compound-stmt = (declaration | stmt)* "}"
-static Node *
-compound_stmt(Token **tok, Token *mark)
-{
-    Node head = {0};
-    Node *node = &head;
-
-    while (!skip(tok, '}')) {
-        if (tok_match(*tok, "int")) node = node->next = declaration(tok);
-        else                        node = node->next = stmt(tok);
-        add_type(node);
-        print_tree(node, "// ");
-    }
-
-    Node *block = new_node(ND_BLOCK, mark);
-    block->body = head.next;
-
-    return block;
-}
-
-// expr-stmt = expr? ";"
-static Node *
-expr_stmt(Token **tok) {
-    Node *node;
-    Token *mark = *tok;
-
-    if (skip(tok, ';')) {
-         node = new_node(ND_BLOCK, mark);
-    } else {
-        node = expr(tok);
-        node = new_unary(ND_EXPR_STMT, node, *tok);
-        expect_skip(tok, ';');
-    }
-    return node;
-}
-
-// expr = assign
-static Node *
-expr(Token **tok)
-{
-    return assign(tok);
-}
-
-// assign = equality (= assign)?
-static Node *
-assign(Token **tok)
-{
-    Node *node = equality(tok);
-
-    Token *mark = *tok;
-    if (skip(tok, '=')) {
-        switch (node->kind) {
-            case ND_VAR:
-            case ND_DEREF:
-                node = new_binary(ND_ASSIGN, node, assign(tok), mark);
-                break;
-            default:
-                error_tok(mark, "Not an lvalue to the left of assignment!");
-        }
-    }
-
-    return node;
-}
-
-static Node *
-equality(Token **tok)
-{
-
-    Node *node = relational(tok);
-
-    for (;;) {
-        Token *mark = *tok;
-        if (skip(tok, TK_EQ)) {
-            node = new_binary(ND_EQ, node, relational(tok), mark);
-            continue;
-        }
-        if (skip(tok, TK_NOEQ)) {
-            node = new_binary(ND_NE, node, relational(tok), mark);
-            continue;
-        }
-        return node;
-    }
-}
-
-static Node *
-relational(Token **tok)
-{
-    Node *node = add(tok);
-    for (;;) {
-        Token *mark = *tok;
-        if (skip(tok, '<')) {
-            node = new_binary(ND_LT, node, add(tok), mark);
-            continue;
-        }
-        if (skip(tok, '>')) {
-            node = new_binary(ND_LT, add(tok), node, mark);
-            continue;
-        }
-        if (skip(tok, TK_LTEQ)) {
-            node = new_binary(ND_LTE, node, add(tok), mark);
-            continue;
-        }
-        if (skip(tok, TK_GREQ)) {
-            node = new_binary(ND_LTE, add(tok), node, mark);
-            continue;
-        }
-        return node;
-    }
-}
-
-static Node *
-add(Token **tok)
-{
-    Node *node = mul(tok);
-    for (;;) {
-        Token *mark = *tok;
-        if (skip(tok, '+')) {
-            node = new_add(node, mul(tok), mark);
-            continue;
-        }
-        if (skip(tok, '-')) {
-            node = new_sub(node, mul(tok), mark);
-            continue;
-        }
-        return node;
-    }
-}
-
-static Node *
-mul(Token **tok)
-{
-    Node *node = unary(tok);
-    for (;;) {
-        Token *mark = *tok;
-        if (skip(tok, '*')) {
-            node = new_binary(ND_MUL, node, unary(tok), mark);
-            continue;
-        }
-        if (skip(tok, '/')) {
-            node = new_binary(ND_DIV, node, unary(tok), mark);
-            continue;
-        }
-        return node;
-    }
-}
-
-// unary = ("+" | "-" | "&" | "*") unary
-static Node *
-unary(Token **tok)
-{
-    Node *node;
-    Token *mark = *tok;
-    if (skip(tok, '+')) {
-        node = unary(tok);
-    } else if (skip(tok, '-')) {
-        node = new_unary(ND_NEG, unary(tok), mark);
-    } else if (skip(tok, '*')) {
-        node = new_unary(ND_DEREF, unary(tok), mark);
-    } else if (skip(tok, '&')) {
-        node = new_unary(ND_ADDR, unary(tok), mark);
-        switch (node->lhs->kind) {
-        case ND_VAR:
-        case ND_DEREF:
-            break;
-        default:
-            error_tok(mark, "Lvalue is required as unary & operand!");
-        }
-    } else {
-        node = primary(tok);
-    }
-
-    return node;
-}
+static Node *parse_expr(Token **tok, int min_prec);
+static Node *parse_leaf(Token **tok);
 
 // funcall = (expr ("," expr)*)?
 static Node *
@@ -667,10 +461,9 @@ funcall(Token **tok, Token *mark)
     Node head = {0};
     Node *node = &head;
 
-    int not_first_time = 0;
-    while (!skip(tok, ')')) {
-        if (not_first_time++) expect_skip(tok, ',');
-        node = node->next = expr(tok);
+    for (int i = 0; !skip(tok, ')'); ++i) {
+        if (i) expect_skip(tok, ',');
+        node = node->next = parse_expr(tok, MIN_PREC);
     }
 
     node = new_node(ND_FUNCALL, mark);
@@ -678,39 +471,236 @@ funcall(Token **tok, Token *mark)
     return node;
 }
 
-// primary = "(" expr ")" | ident funcall-args?  | num
+// right leaning tree builder
 static Node *
-primary(Token **tok)
+parse_increasing_recedence(Token **tok, Node *left, int min_prec)
+{
+    Token *mark = *tok;
+
+    int next_prec = get_precedence(mark); // Returns lowest precedence on any non binary operation token so that we stop.
+    if (next_prec < min_prec) return left;
+
+    (*tok) = (*tok)->next;
+
+    Node *right = parse_expr(tok, next_prec);
+    return new_binary_with_checks(tok_to_binary_op(mark), left, right, mark);
+}
+
+// left leaning tree builder
+static Node *
+parse_expr(Token **tok, int min_prece)
 {
     Node *node;
-    Token *mark = *tok;
-    if (skip(tok, TK_NUM)) {
-        node = new_num(mark);
-    } else if (skip(tok, TK_ID)) {
-        if (skip(tok, '(')) {
-            node = funcall(tok, mark);
-        } else {
-            node = var_node(mark);
-        }
-    } else if (skip(tok, '(')) {
-        node = expr(tok);
-        expect_skip(tok, ')');
-    } else {
-        error_tok(mark, "Expected primary token!");
+    Node *left = parse_leaf(tok);
+
+    for (;;) {
+        node = parse_increasing_recedence(tok, left, min_prece);
+        if (node == left) break;
+
+        left = node;
     }
 
     return node;
 }
 
-Function *
+static Node *
+parse_leaf(Token **tok)
+{
+    Token *mark = *tok;
+
+    // var
+    if (skip(tok, TK_ID)) {
+        if (skip(tok, '(')) { // TEMPORARY: must handle both function and var symbols in the same space and then try to parse "(" ... ")" to see if it's a function call and set appropriate flags and stuff ...
+            return funcall(tok, mark);
+        }
+        return var_node(mark, NULL);
+    }
+    // num
+    if (skip(tok, TK_NUM)) return new_num(mark);
+    // paren
+    if (skip(tok, '(')) {
+        Node *node = parse_expr(tok, MIN_PREC);
+        expect_skip(tok, ')');
+        return node;
+    }
+    // unary unary operator
+    switch (mark->kind) { // TODO: Extract to a function.
+        case '+':
+            *tok = mark->next;
+            return parse_leaf(tok);
+        case '-':
+            *tok = mark->next;
+            return new_unary(ND_NEG, parse_leaf(tok), mark);
+        case '*':
+            *tok = mark->next;
+            return new_unary(ND_DEREF, parse_leaf(tok), mark);
+        case '&':
+            *tok = mark->next;
+            Node *left = parse_leaf(tok);
+            switch (left->kind) {
+                case ND_VAR: case ND_DEREF:
+                    break;
+                default: error_tok(mark, "Lvalue is required as unary & operand!");
+            }
+            return new_unary(ND_ADDR, left, mark);
+        default:
+            // fallthrough
+    }
+
+    error_tok(mark, "Expected a primary token got '%s'!", tk_kind_str(mark->kind));
+    abort();
+}
+
+static Node *
+parse_var_declaration(Token **tok, Token *mark, Type *type)
+{
+    Node head = {0};
+    Node *body = &head;
+
+    for (int i = 0; !skip(tok, ';'); ++i) {
+        if (i) expect_skip(tok, ',');
+
+        Type *ty = type;
+        while (skip(tok, '*')) ty = pointer_to(ty);
+
+        mark = *tok;
+        expect_skip(tok, TK_ID);
+        Var *var = new_var(mark, ty);
+
+        mark = *tok;
+        if (skip(tok, '=')) {
+            Node *left = var_node(NULL, var);
+            Node *right = parse_expr(tok, MIN_PREC);
+            Node *binary = new_binary(ND_ASSIGN, left, right, mark);
+            body = body->next = new_unary(ND_EXPR_STMT, binary, *tok);
+        }
+    } // skiped ';'
+    Node *node = new_node(ND_BLOCK, mark); // NOTE: this node's tok is incorrect, but I don't care about tok for a ND_BLOCK.
+    node->body = head.next;
+    return node;
+}
+
+static Node *
+parse_expr_statement(Token **tok)
+{
+    Token *mark = *tok;
+
+    // empty statement
+    if (skip(tok, ';')) return new_node(ND_BLOCK, mark);
+
+    Node *node = parse_expr(tok, MIN_PREC);
+    expect_skip(tok, ';');
+    node = new_unary(ND_EXPR_STMT, node, mark);
+    return node;
+}
+
+static Node *
+parse_block(Token **tok)
+{
+    Node *node;
+    Token *mark = *tok;
+
+    // block statement { ... }
+    if (skip(tok, '{')) {
+        Node head = {0};
+        node = &head;
+        while (!skip(tok, '}')) {
+            node = node->next = parse_block(tok);
+        }
+        node = new_node(ND_BLOCK, mark);
+        node->body = head.next;
+        return node;
+    }
+
+    // return statement
+    if (skip_id(tok, "return")) {
+        node = new_unary(ND_RETURN, parse_expr(tok, MIN_PREC), mark);
+        expect_skip(tok, ';');
+        return node;
+    }
+
+    // declaration | defenition
+    if (skip_id(tok, "int")) return parse_var_declaration(tok, mark, ty_int);
+
+    // "if" statement
+    if (skip_id(tok, "if")) {
+        node = new_node(ND_IF, mark);
+        expect_skip(tok, '(');
+        node->cond = parse_expr(tok, MIN_PREC);
+        expect_skip(tok, ')');
+        node->then = parse_block(tok);
+        if (skip_id(tok, "else")) node->els = parse_block(tok);
+        return node;
+    }
+
+    // "for" statement
+    if (skip_id(tok, "for")) {
+        node = new_node(ND_FOR, mark);
+        expect_skip(tok, '(');
+        node->init = parse_expr_statement(tok);
+        if (!skip(tok, ';')) {
+            node->cond = parse_expr(tok, MIN_PREC);
+            expect_skip(tok, ';');
+        }
+        if (!skip(tok, ')')) {
+            node->iter = parse_expr(tok, MIN_PREC);
+            expect_skip(tok, ')');
+        }
+        node->then = parse_block(tok);
+        return node;
+    }
+
+    // "while" statement
+    if (skip_id(tok, "while")) {
+        node = new_node(ND_FOR, mark);
+        expect_skip(tok, '(');
+        node->cond = parse_expr(tok, MIN_PREC);
+        expect_skip(tok, ')');
+        node->then = parse_block(tok);
+        return node;
+    }
+
+    // "do-while" statement
+    if (skip_id(tok, "do")) {
+        node = new_node(ND_DO, mark);
+        node->then = parse_block(tok);
+        expect_skip_id(tok, "while");
+        expect_skip(tok, '(');
+        node->cond = parse_expr(tok, MIN_PREC);
+        expect_skip(tok, ')');
+        expect_skip(tok, ';');
+        return node;
+    }
+
+    // else:
+    // expression statement
+    node = parse_expr_statement(tok);
+
+    return node;
+}
+
+Program *
 parse(Token *tok)
 {
-    Token *mark = tok;
-    expect(tok, '{'); // just to shut up the warnings of unused function.
+    Node head = {0};
+    Node *node = &head;
+
     expect_skip(&tok, '{');
-    Function *prog = calloc(1, sizeof(*prog));
-    prog->body = compound_stmt(&tok, mark);
-    prog->locals = locals;
+    while (tok->kind != '}') {
+        node = node->next = parse_block(&tok);
+        add_type(node);
+    }
+    expect_skip(&tok, '}');
+
+    node = new_node(ND_BLOCK, tok); // tok is end of file!
+    node->body = head.next;
+
+    Function *func = calloc(1, sizeof(*func));
+    func->body = node;
+    func->locals = locals;
+
+    Program *prog = calloc(1, sizeof(*prog));
+    prog->functions = func;
 
     return prog;
 }
