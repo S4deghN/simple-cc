@@ -7,6 +7,8 @@ static int depth;
 // based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
 static char *call_reg[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
+static Function *current_fn;
+
 static int
 counter()
 {
@@ -187,7 +189,7 @@ gen_stmt(Node *node)
         break;
     case ND_RETURN:
         gen_expr(node->lhs);
-        printf("  jmp\t.L.return\n");
+        printf("  jmp\t.L.return.%.*s\n", current_fn->tok->len, current_fn->tok->str);
         break;
     case ND_EXPR_STMT:
         gen_expr(node->lhs);
@@ -211,26 +213,30 @@ assing_locals_offset(Function *func)
 }
 
 void
-codegen(Function *func)
+codegen(Function *functions)
 {
-    assing_locals_offset(func);
+    for (Function *fn = functions; fn; fn = fn->next) {
+        current_fn = fn;
+        assing_locals_offset(fn);
 
-    printf(".global main\n");
-    printf("main:\n");
+        Token *name = fn->tok;
+        printf(".global %.*s\n", name->len, name->str);
+        printf("%.*s:\n", name->len, name->str);
 
-    // prolog
-    printf("  push\t%%rbp\n");
-    printf("  mov\t%%rsp, %%rbp\n");
-    printf("  sub\t$%d, %%rsp\n", func->stack_size);
+        // prolog
+        printf("  push\t%%rbp\n");
+        printf("  mov\t%%rsp, %%rbp\n");
+        printf("  sub\t$%d, %%rsp\n", fn->stack_size);
 
-    print_tree(func->body, "  // ");
-    gen_stmt(func->body);
-    assert(depth == 0);
+        print_tree(fn->body, "  // ");
+        gen_stmt(fn->body);
+        assert(depth == 0);
 
-    // epilogue
-    printf(".L.return:\n");
-    printf("  mov\t%%rbp, %%rsp\n");
-    printf("  pop\t%%rbp\n");
+        // epilogue
+        printf(".L.return.%.*s:\n", name->len, name->str);
+        printf("  mov\t%%rbp, %%rsp\n");
+        printf("  pop\t%%rbp\n");
 
-    printf("  ret\n");
+        printf("  ret\n");
+    }
 }

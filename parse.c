@@ -131,10 +131,10 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
 void
 print_tree(const Node *root, char *prefix)
 {
-    char *line;
-    int line_len;
-    get_stmt_str(root->tok, &line, &line_len);
-    printf("%s%.*s\n", prefix, line_len, line);
+    // char *line;
+    // int line_len;
+    // get_stmt_str(root->tok, &line, &line_len);
+    // printf("%s%.*s\n", prefix, line_len, line);
 
     char prefix_buff[256]; // must be big enough or segfault
     memcpy(prefix_buff, prefix, strlen(prefix));
@@ -595,7 +595,7 @@ parse_expr_statement(Token **tok)
 }
 
 static Node *
-parse_block(Token **tok)
+parse_statement(Token **tok)
 {
     Node *node;
     Token *mark = *tok;
@@ -605,7 +605,7 @@ parse_block(Token **tok)
         Node head = {0};
         node = &head;
         while (!skip(tok, '}')) {
-            node = node->next = parse_block(tok);
+            node = node->next = parse_statement(tok);
         }
         node = new_node(ND_BLOCK, mark);
         node->body = head.next;
@@ -628,8 +628,8 @@ parse_block(Token **tok)
         expect_skip(tok, '(');
         node->cond = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ')');
-        node->then = parse_block(tok);
-        if (skip_id(tok, "else")) node->els = parse_block(tok);
+        node->then = parse_statement(tok);
+        if (skip_id(tok, "else")) node->els = parse_statement(tok);
         return node;
     }
 
@@ -646,7 +646,7 @@ parse_block(Token **tok)
             node->iter = parse_expr(tok, MIN_PREC);
             expect_skip(tok, ')');
         }
-        node->then = parse_block(tok);
+        node->then = parse_statement(tok);
         return node;
     }
 
@@ -656,14 +656,14 @@ parse_block(Token **tok)
         expect_skip(tok, '(');
         node->cond = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ')');
-        node->then = parse_block(tok);
+        node->then = parse_statement(tok);
         return node;
     }
 
     // "do-while" statement
     if (skip_id(tok, "do")) {
         node = new_node(ND_DO, mark);
-        node->then = parse_block(tok);
+        node->then = parse_statement(tok);
         expect_skip_id(tok, "while");
         expect_skip(tok, '(');
         node->cond = parse_expr(tok, MIN_PREC);
@@ -679,28 +679,47 @@ parse_block(Token **tok)
     return node;
 }
 
-Program *
-parse(Token *tok)
+static Function *
+parse_function(Token **tok)
 {
     Node head = {0};
-    Node *node = &head;
+    Node *body = &head;
 
-    expect_skip(&tok, '{');
-    while (tok->kind != '}') {
-        node = node->next = parse_block(&tok);
-        add_type(node);
+    expect_skip_id(tok, "int");
+    Token *func_name = *tok;
+    expect_skip(tok, TK_ID);
+    expect_skip(tok, '(');
+    expect_skip(tok, ')');
+    expect_skip(tok, '{');
+    while (!skip(tok, '}')) {
+        body = body->next = parse_statement(tok);
+        add_type(body);
+        if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
     }
-    expect_skip(&tok, '}');
-
-    node = new_node(ND_BLOCK, tok); // tok is end of file!
+    Node *node = new_node(ND_BLOCK, func_name);
     node->body = head.next;
 
     Function *func = calloc(1, sizeof(*func));
+    func->tok = func_name;
     func->body = node;
     func->locals = locals;
+    locals = NULL; // Reset locals for next function.
+
+    return func;
+}
+
+Program *
+parse(Token *tok)
+{
+    Function head = {0};
+    Function *func = &head;
+
+    while (tok->kind != TK_EOF) {
+        func = func->next = parse_function(&tok);
+    }
 
     Program *prog = calloc(1, sizeof(*prog));
-    prog->functions = func;
+    prog->functions = head.next;
 
     return prog;
 }

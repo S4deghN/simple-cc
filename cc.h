@@ -90,7 +90,6 @@ typedef enum {
     ND_FOR,        // "for" or "while"
     ND_DO,         // "do while"
     ND_EXPR_STMT,
-    ND_DECL_VAR,
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
@@ -108,6 +107,7 @@ struct Var {
 typedef struct Function Function;
 struct Function {
     Function *next;
+    Token *tok;
     Node *body;
     Var *locals;
     int stack_size;
@@ -160,6 +160,7 @@ void print_tree(const Node *root, char *prefix);
 typedef enum {
     TY_INT,
     TY_PTR,
+    TY_FUNC,
 } TypeKind;
 char *ty_kind_str(TypeKind kind);
 
@@ -167,18 +168,20 @@ struct Type {
     TypeKind kind;
     Type *base; // pointer
     Token *name;
+    Type *ret_ty;
 };
 
 extern Type *ty_int;
 
 bool type_is(Node *node, TypeKind kind);
 Type *pointer_to(Type *base);
+Type *func_type(Type *ret_ty);
 void add_type(Node *node);
 
 //
 // codegen.c
 //
 
-void codegen(Function *prog);
+void codegen(Function *functions);
 
 #endif

@@ -5,7 +5,7 @@ $(info objs = $(objs))
 $(info headers = $(headers))
 $(info )
 
-CFLAGS=-g -fno-common -Wall -Wextra -Werror=return-type
+CFLAGS=-g -fno-common -Wall -Wextra -Wno-switch -Wno-unused-function -Werror=return-type
 
 bin/compiler: $(objs)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)

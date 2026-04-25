@@ -31,6 +31,15 @@ pointer_to(Type *type)
     return ty;
 }
 
+Type *
+func_type(Type *ret_ty)
+{
+  Type *ty = calloc(1, sizeof(*ty));
+  ty->kind = TY_FUNC;
+  ty->ret_ty = ret_ty;
+  return ty;
+}
+
 void
 add_type(Node *node)
 {
@@ -71,6 +80,9 @@ add_type(Node *node)
             error_tok(node->tok, "Invalid pointer dereference!");
         }
         node->ty = node->lhs->ty->base;
+        break;
+    case ND_FUNCALL:
+        node->ty = ty_int;
         break;
     case ND_EXPR_STMT:
     case ND_RETURN:
