@@ -551,11 +551,24 @@ parse_leaf(Token **tok)
     abort();
 }
 
+static Type *
+parse_id_declarator(Token **tok)
+{
+    expect_skip_id(tok, "int");
+    Type *ty = ty_int;
+    while (skip(tok, '*')) ty = pointer_to(ty);
+    return ty;
+}
+
 static Node *
-parse_var_declaration(Token **tok, Token *mark, Type *type)
+parse_var_declaration(Token **tok)
 {
     Node head = {0};
     Node *body = &head;
+
+    Token *mark;
+
+    Type *type = parse_id_declarator(tok);
 
     for (int i = 0; !skip(tok, ';'); ++i) {
         if (i) expect_skip(tok, ',');
@@ -620,7 +633,7 @@ parse_statement(Token **tok)
     }
 
     // declaration | defenition
-    if (skip_id(tok, "int")) return parse_var_declaration(tok, mark, ty_int);
+    if (tok_match(*tok, "int")) return parse_var_declaration(tok);
 
     // "if" statement
     if (skip_id(tok, "if")) {
@@ -689,7 +702,27 @@ parse_function(Token **tok)
     Token *func_name = *tok;
     expect_skip(tok, TK_ID);
     expect_skip(tok, '(');
-    expect_skip(tok, ')');
+
+    // id_declarator id (, id_declarator id)
+    int parameters_count = 0;
+    for (; !skip(tok, ')'); ++parameters_count) {
+        if (parameters_count) expect_skip(tok, ',');
+        Type *ty = parse_id_declarator(tok);
+        Token *var_name = *tok;
+        expect_skip(tok, TK_ID);
+        new_var(var_name, ty);
+    }
+    Var *parameters = locals; // right now points to the last function parameter
+
+    // Later on it's going to be like this:
+    //
+    // var -> var -> var -> var -> var -> var
+    //  ^             ^
+    // locals      params
+    //
+    // So they use the same namespace, and we can easily alocated stack for
+    // in the expected order by traversing `locals`
+
     expect_skip(tok, '{');
     while (!skip(tok, '}')) {
         body = body->next = parse_statement(tok);
@@ -702,6 +735,8 @@ parse_function(Token **tok)
     Function *func = calloc(1, sizeof(*func));
     func->tok = func_name;
     func->body = node;
+    func->parameters = parameters;
+    func->parameters_count = parameters_count;
     func->locals = locals;
     locals = NULL; // Reset locals for next function.
 

@@ -108,8 +108,11 @@ typedef struct Function Function;
 struct Function {
     Function *next;
     Token *tok;
-    Node *body;
+    Var *parameters;
+    size_t parameters_count;
     Var *locals;
+
+    Node *body;
     int stack_size;
 };
 

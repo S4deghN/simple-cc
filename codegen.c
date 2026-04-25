@@ -228,6 +228,11 @@ codegen(Function *functions)
         printf("  mov\t%%rsp, %%rbp\n");
         printf("  sub\t$%d, %%rsp\n", fn->stack_size);
 
+        // Save passed-by-register arguments to the stack
+        int i = fn->parameters_count - 1;
+        for (Var *var = fn->parameters; var; var = var->next)
+            printf("  mov\t%s, %d(%%rbp)\n", call_reg[i--], var->stack_offset);
+
         print_tree(fn->body, "  // ");
         gen_stmt(fn->body);
         assert(depth == 0);
