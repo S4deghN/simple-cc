@@ -11,13 +11,14 @@ tk_kind_str(TokenKind kind)
 {
     char *ret_buff = malloc(16); // TODO: use temp buffer.
     switch (kind) {
-        case TK_EOF:  return "EOF";
-        case TK_ID:   return "ID";
-        case TK_NUM:  return "NUM";
-        case TK_GREQ: return "GREQ";
-        case TK_LTEQ: return "LTEQ";
-        case TK_EQ:   return "EQ";
-        case TK_NOEQ: return "NOEQ";
+        case TK_EOF:     return "EOF";
+        case TK_ID:      return "ID";
+        case TK_KEYWORD: return "KEYWORD";
+        case TK_NUM:     return "NUM";
+        case TK_GREQ:    return "GREQ";
+        case TK_LTEQ:    return "LTEQ";
+        case TK_EQ:      return "EQ";
+        case TK_NOEQ:    return "NOEQ";
         default:
             if (ispunct(kind)) {
                 sprintf(ret_buff, "PUNCT(%c)", kind);
@@ -127,6 +128,21 @@ static int
 is_boundry(int c)
 {
     return (isspace(c) || ispunct(c) || c == '\0');
+}
+
+static int
+is_keyword(char *str, size_t len)
+{
+    static const char *kws[] = {
+        "return", "if", "else", "for", "while", "do", "int", "sizeof",
+    };
+
+    for (uint i = 0; i < sizeof(kws)/sizeof(*kws); ++i) {
+        if (strlen(kws[i]) == len && strncmp(str, kws[i], len) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static size_t
@@ -239,7 +255,10 @@ tokenize(File *file)
         size_t mark = i;
         TokenKind kind;
 
-        if      ((i = skip_id(file, i, line_nr)) != mark) { kind = TK_ID; }
+        if ((i = skip_id(file,  i, line_nr)) != mark) {
+            kind = TK_ID;
+            if (is_keyword(str + mark, i - mark)) kind = TK_KEYWORD;
+        }
         else if ((i = skip_num(file, i, line_nr)) != mark) { kind = TK_NUM; }
         else if ((i = skip_rel(file, i, line_nr, &kind)) != mark) {}
         else if (ispunct(str[i])) { kind = str[i++]; }

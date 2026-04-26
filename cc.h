@@ -30,6 +30,7 @@ typedef enum {
     // skip litteral ascii tokens
     TK_ID = 128,
     TK_NUM,
+    TK_KEYWORD,
     TK_GREQ,
     TK_LTEQ,
     TK_EQ,

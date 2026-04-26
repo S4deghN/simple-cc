@@ -404,6 +404,29 @@ expect_skip_id(Token **tok, char *name)
     return tk;
 }
 
+static Token *
+skip_kw(Token **tok, char *name)
+{
+    Token *tk = *tok;
+
+    if (tk->kind != TK_KEYWORD) return NULL;
+    if (tok_match(tk, name)) {
+        *tok = tk->next;
+        return tk;
+    }
+    return NULL;
+}
+
+static Token *
+expect_skip_kw(Token **tok, char *name)
+{
+    Token *tk = skip_kw(tok, name);
+    if (!tk) {
+        error_tok(*tok, "Expected '%s', got '%s'", name, tk_kind_str((*tok)->kind));
+    }
+    return tk;
+}
+
 static int
 get_precedence(Token *tok)
 {
@@ -565,6 +588,12 @@ parse_leaf(Token **tok)
         // fallthrough
     }
 
+    if (skip_kw(tok, "sizeof")) {
+        node = parse_leaf(tok);
+        add_type(node);
+        return new_implicit_num(mark, node->ty->size);
+    }
+
     error_tok(mark, "Expected a primary token got '%s'!", tk_kind_str(mark->kind));
     abort();
 }
@@ -573,7 +602,7 @@ static Type *
 parse_base_type(Token **tok)
 {
     Type *ty = calloc(1, sizeof(*ty));
-    ty->ty_name = expect_skip_id(tok, "int");
+    ty->ty_name = expect_skip_kw(tok, "int");
     ty->kind = TY_INT;
     ty->size = 8;
     return ty;
@@ -685,7 +714,7 @@ parse_statement(Token **tok)
     }
 
     // return statement
-    if (skip_id(tok, "return")) {
+    if (skip_kw(tok, "return")) {
         node = new_unary(ND_RETURN, parse_expr(tok, MIN_PREC), mark);
         expect_skip(tok, ';');
         return node;
@@ -695,18 +724,18 @@ parse_statement(Token **tok)
     if (tok_match(*tok, "int")) return parse_var_declaration(tok);
 
     // "if" statement
-    if (skip_id(tok, "if")) {
+    if (skip_kw(tok, "if")) {
         node = new_node(ND_IF, mark);
         expect_skip(tok, '(');
         node->cond = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ')');
         node->then = parse_statement(tok);
-        if (skip_id(tok, "else")) node->els = parse_statement(tok);
+        if (skip_kw(tok, "else")) node->els = parse_statement(tok);
         return node;
     }
 
     // "for" statement
-    if (skip_id(tok, "for")) {
+    if (skip_kw(tok, "for")) {
         node = new_node(ND_FOR, mark);
         expect_skip(tok, '(');
         node->init = parse_expr_statement(tok);
@@ -723,7 +752,7 @@ parse_statement(Token **tok)
     }
 
     // "while" statement
-    if (skip_id(tok, "while")) {
+    if (skip_kw(tok, "while")) {
         node = new_node(ND_FOR, mark);
         expect_skip(tok, '(');
         node->cond = parse_expr(tok, MIN_PREC);
@@ -733,10 +762,10 @@ parse_statement(Token **tok)
     }
 
     // "do-while" statement
-    if (skip_id(tok, "do")) {
+    if (skip_kw(tok, "do")) {
         node = new_node(ND_DO, mark);
         node->then = parse_statement(tok);
-        expect_skip_id(tok, "while");
+        expect_skip_kw(tok, "while");
         expect_skip(tok, '(');
         node->cond = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ')');
