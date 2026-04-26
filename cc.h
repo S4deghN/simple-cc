@@ -169,15 +169,24 @@ char *ty_kind_str(TypeKind kind);
 
 struct Type {
     TypeKind kind;
+    Token *ty_name;
+    Token *id_name;
+
+    // Pointer
     Type *base; // pointer
-    Token *name;
+
+    // Function
     Type *ret_ty;
+    Type *params;
+    Type *next;
+    int param_count;
 };
 
 extern Type *ty_int;
 
 bool type_is(Node *node, TypeKind kind);
 Type *pointer_to(Type *base);
+Type *copy_type(Type *ty);
 Type *func_type(Type *ret_ty);
 void add_type(Node *node);
 

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <assert.h>
 
 const int MIN_PREC = -1;
 
@@ -340,15 +341,15 @@ expect(Token *tok, TokenKind kind)
         error_tok(tok, "Expected '%s', got '%s'", tk_kind_str(kind), tk_kind_str(tok->kind));
 }
 
-static bool
+static Token *
 skip(Token **tok, TokenKind kind)
 {
     Token *tk = *tok;
     if (tk->kind == kind) {
         *tok = tk->next;
-        return true;
+        return tk;
     }
-    return false;
+    return NULL;
 }
 
 static bool
@@ -363,12 +364,14 @@ skip_class(Token **tok, bool (*is_kind_class)(TokenKind kind))
 }
 
 
-static void
+static Token *
 expect_skip(Token **tok, TokenKind kind)
 {
-    if (!skip(tok, kind)) {
+    Token *tk = skip(tok, kind);
+    if (!tk) {
         error_tok(*tok, "Expected '%s', got '%s'", tk_kind_str(kind), tk_kind_str((*tok)->kind));
     }
+    return tk;
 }
 
 static bool
@@ -377,26 +380,27 @@ tok_match(Token *tok, char *name)
     return strlen(name) == (size_t)tok->len && strncmp(name, tok->str, tok->len) == 0;
 }
 
-static bool
+static Token *
 skip_id(Token **tok, char *name)
 {
     Token *tk = *tok;
 
-    if (tk->kind != TK_ID) return false;
+    if (tk->kind != TK_ID) return NULL;
     if (tok_match(tk, name)) {
-        tk = tk->next;
-        *tok = tk;
-        return true;
+        *tok = tk->next;
+        return tk;
     }
-    return false;
+    return NULL;
 }
 
-static void
+static Token *
 expect_skip_id(Token **tok, char *name)
 {
-    if (!skip_id(tok, name)) {
+    Token *tk = skip_id(tok, name);
+    if (!tk) {
         error_tok(*tok, "Expected '%s', got '%s'", name, tk_kind_str((*tok)->kind));
     }
+    return tk;
 }
 
 static int
@@ -552,33 +556,61 @@ parse_leaf(Token **tok)
 }
 
 static Type *
-parse_id_declarator(Token **tok)
+parse_base_type(Token **tok)
 {
-    expect_skip_id(tok, "int");
-    Type *ty = ty_int;
+    Type *ty = calloc(1, sizeof(*ty));
+    ty->ty_name = expect_skip_id(tok, "int");
+    ty->kind = TY_INT;
+    return ty;
+}
+
+static Type *
+parse_id_declarator(Token **tok, Type *ty)
+{
+    // Be aware that right now we are using this function recursively to parse a function declerator and also its parameters. So one could pass a function declarator as a function declaration as parameter which is not defined in C and we do not support it either but for the sake of simplicity we do not care right now.
     while (skip(tok, '*')) ty = pointer_to(ty);
+
+    ty->id_name = expect_skip(tok, TK_ID);
+
+    if (skip(tok, '(')) {
+        ty->ret_ty = copy_type(ty);
+        ty->kind = TY_FUNC;
+
+        Type head = {};
+        Type *param = &head;
+        int param_count = 0;
+        for (; !skip(tok, ')'); ++param_count) {
+            if (param_count) expect_skip(tok, ',');
+            param = param->next = parse_base_type(tok);
+            param = parse_id_declarator(tok, param);
+        }
+        ty->params = head.next;
+        ty->param_count = param_count;
+
+    } else if (skip(tok, '[')) {
+        assert(0 && "NOT IMPLEMENTED!");
+    }
+
     return ty;
 }
 
 static Node *
 parse_var_declaration(Token **tok)
 {
-    Node head = {0};
-    Node *body = &head;
-
     Token *mark;
 
-    Type *type = parse_id_declarator(tok);
+    Type *base_ty = parse_base_type(tok);
 
+    Node head = {0};
+    Node *body = &head;
     for (int i = 0; !skip(tok, ';'); ++i) {
         if (i) expect_skip(tok, ',');
 
-        Type *ty = type;
-        while (skip(tok, '*')) ty = pointer_to(ty);
+        Type *ty = copy_type(base_ty);
+        ty = parse_id_declarator(tok, ty);
+        if (ty->kind == TY_FUNC) error_tok(ty->id_name, "Nested function declaration is not supported!");
 
-        mark = *tok;
-        expect_skip(tok, TK_ID);
-        Var *var = new_var(mark, ty);
+        Var *var = new_var(ty->id_name, ty);
 
         mark = *tok;
         if (skip(tok, '=')) {
@@ -693,27 +725,17 @@ parse_statement(Token **tok)
 }
 
 static Function *
-parse_function(Token **tok)
+parse_function_definition(Token **tok)
 {
-    Node head = {0};
-    Node *body = &head;
+    locals = NULL; // Reset locals for next function.
 
-    expect_skip_id(tok, "int");
-    Token *func_name = *tok;
-    expect_skip(tok, TK_ID);
-    expect_skip(tok, '(');
+    Type *fn_type = parse_base_type(tok);
+    fn_type = parse_id_declarator(tok, fn_type);
 
-    // id_declarator id (, id_declarator id)
-    int parameters_count = 0;
-    for (; !skip(tok, ')'); ++parameters_count) {
-        if (parameters_count) expect_skip(tok, ',');
-        Type *ty = parse_id_declarator(tok);
-        Token *var_name = *tok;
-        expect_skip(tok, TK_ID);
-        new_var(var_name, ty);
-    }
+    for (Type *param = fn_type->params; param; param = param->next)
+        new_var(param->id_name, param);
+
     Var *parameters = locals; // right now points to the last function parameter
-
     // Later on it's going to be like this:
     //
     // var -> var -> var -> var -> var -> var
@@ -724,21 +746,22 @@ parse_function(Token **tok)
     // in the expected order by traversing `locals`
 
     expect_skip(tok, '{');
+    Node head = {0};
+    Node *body = &head;
     while (!skip(tok, '}')) {
         body = body->next = parse_statement(tok);
         add_type(body);
         if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
     }
-    Node *node = new_node(ND_BLOCK, func_name);
+    Node *node = new_node(ND_BLOCK, fn_type->id_name);
     node->body = head.next;
 
     Function *func = calloc(1, sizeof(*func));
-    func->tok = func_name;
-    func->body = node;
+    func->tok = fn_type->id_name;
+    func->parameters_count = fn_type->param_count;
     func->parameters = parameters;
-    func->parameters_count = parameters_count;
     func->locals = locals;
-    locals = NULL; // Reset locals for next function.
+    func->body = node;
 
     return func;
 }
@@ -750,7 +773,7 @@ parse(Token *tok)
     Function *func = &head;
 
     while (tok->kind != TK_EOF) {
-        func = func->next = parse_function(&tok);
+        func = func->next = parse_function_definition(&tok);
     }
 
     Program *prog = calloc(1, sizeof(*prog));

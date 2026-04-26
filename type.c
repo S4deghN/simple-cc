@@ -23,6 +23,14 @@ is_type(Node *node, TypeKind kind)
 }
 
 Type *
+copy_type(Type *ty)
+{
+  Type *ret = calloc(1, sizeof(*ret));
+  *ret = *ty;
+  return ret;
+}
+
+Type *
 pointer_to(Type *type)
 {
     Type *ty = calloc(1, sizeof(*ty));
