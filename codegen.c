@@ -37,10 +37,12 @@ gen_addr(Node *node)
 {
     switch (node->kind) {
     case ND_VAR:
-        printf("  lea %d(%%rbp), %%rax\n", node->ident->stack_offset);
-        // or
-        // printf("  mov\t%%rbp, %%rax\n");
-        // printf("  sub\t$%d, %%rax\n", node->var->stack_offset);
+        if (node->ident->is_local) {
+            printf("  lea\t%d(%%rbp), %%rax\n", node->ident->stack_offset);
+        } else {
+            Token *tok = node->ident->tok;
+            printf("  lea\t%.*s(%%rip), %%rax\n", tok->len, tok->str);
+        }
         break;
     case ND_DEREF:
         gen_expr(node->lhs);
@@ -228,10 +230,24 @@ assing_locals_offset(Ident *func)
     func->stack_size = align_to(-offset, 16);
 }
 
-void
-codegen(Ident *program)
+static void
+emit_data(Ident *prog)
 {
-    for (Ident *fn = program; fn; fn = fn->next) {
+    Token *tok;
+    for (Ident *var = prog; var; var = var->next) {
+        if (var->is_function) continue;
+        tok = var->tok;
+        printf("  .data\n");
+        printf("  .globl %.*s\n", tok->len, tok->str);
+        printf("%.*s:\n", tok->len, tok->str);
+        printf("  .zero %d\n", var->ty->size);
+    }
+}
+
+static void
+emit_text(Ident *prog)
+{
+    for (Ident *fn = prog; fn; fn = fn->next) {
         if (!fn->is_function) continue;
         if (!fn->body) continue; // it's only a declaration
 
@@ -239,7 +255,8 @@ codegen(Ident *program)
         assing_locals_offset(fn);
 
         Token *name = fn->tok;
-        printf(".global %.*s\n", name->len, name->str);
+        printf("  .global %.*s\n", name->len, name->str);
+        printf("  .text\n");
         printf("%.*s:\n", name->len, name->str);
 
         // prolog
@@ -263,4 +280,11 @@ codegen(Ident *program)
 
         printf("  ret\n");
     }
+}
+
+void
+codegen(Ident *prog)
+{
+  emit_data(prog);
+  emit_text(prog);
 }
