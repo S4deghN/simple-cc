@@ -185,7 +185,7 @@ static Node *
 new_num(Token *tok)
 {
     Node *node = new_node(ND_NUM, tok);
-    node->val = strtoul(tok->str, NULL, 10);
+    node->val = get_number(tok);
     node->ty = ty_int;
     return node;
 }
@@ -241,57 +241,58 @@ var_node(Token *tok, Var *var)
     return node;
 }
 
-// Overloads '+' for pointer arithmetic.
+// Overloads '+' for pointer and array arithmetic.
 static Node *
-new_add(Node *lhs, Node *rhs, Token *tok) {
-    add_type(lhs);
-    add_type(rhs);
+new_add(Node *left, Node *right, Token *tok) {
+    add_type(left);
+    add_type(right);
 
-    switch (double_case(lhs->ty->kind, rhs->ty->kind)) {
-    case double_case(TY_INT, TY_INT):
-        return new_binary(ND_ADD, lhs, rhs, tok);
-    case double_case(TY_INT, TY_PTR):
-        swap(lhs, rhs);
-        // fallthrough
-    case double_case(TY_PTR, TY_INT):
-        // printf("confirm we are here!\n");
-        rhs = new_binary(ND_MUL, rhs, new_implicit_num(tok, 8), tok);
-        return new_binary(ND_ADD, lhs, rhs, tok);
-    case double_case(TY_PTR, TY_PTR):
-        // TODO: Add type printing and better diagnostics.
-        error_tok(tok, "Invalid operation");
+    // ptr + ptr
+    if (left->ty->base && right->ty->base) error_tok(tok, "Invalid pointer-pointer addition");
+
+    // ptr + int
+    if (left->ty->base) {
+        right = new_binary(ND_MUL, right, new_implicit_num(tok, left->ty->base->size), tok);
+        return new_binary(ND_ADD, left, right, tok);
     }
 
-    return NULL;
+    // int + ptr
+    if (right->ty->base) {
+        left = new_binary(ND_MUL, left, new_implicit_num(tok, left->ty->base->size), tok);
+        return new_binary(ND_ADD, left, right, tok);
+    }
+
+    // int + int
+    return new_binary(ND_ADD, left, right, tok);
 }
 
-// Overloads '-' for pointer arithmetic.
+// Overloads '-' for pointer and array arithmetic.
 static Node *
-new_sub(Node *lhs, Node *rhs, Token *tok) {
-    add_type(lhs);
-    add_type(rhs);
+new_sub(Node *left, Node *right, Token *tok) {
+    add_type(left);
+    add_type(right);
 
-    switch (double_case(lhs->ty->kind, rhs->ty->kind)) {
-    case double_case(TY_INT, TY_INT):
-        return new_binary(ND_SUB, lhs, rhs, tok);
-    case double_case(TY_PTR, TY_PTR): {
-        Node *node = new_binary(ND_SUB, lhs, rhs, tok);
+    // int - ptr
+    if (right->ty->base) error_tok(tok, "Invalid int-pointer subtraction");
+
+    // ptr - ptr
+    if (left->ty->base && right->ty->base) {
+        Node *node = new_binary(ND_SUB, left, right, tok);
         node->ty = ty_int;
-        return new_binary(ND_DIV, node, new_implicit_num(tok, 8), tok);
+        return new_binary(ND_DIV, node, new_implicit_num(tok, left->ty->base->size), tok);
     }
-    case double_case(TY_PTR, TY_INT): {
-        rhs = new_binary(ND_MUL, rhs, new_implicit_num(tok, 8), tok);
-        add_type(rhs);
-        Node *node = new_binary(ND_SUB, lhs, rhs, tok);
-        node->ty = lhs->ty;
+
+    // ptr - int
+    if (left->ty->base) {
+        right = new_binary(ND_MUL, right, new_implicit_num(tok, left->ty->base->size), tok);
+        add_type(right);
+        Node *node = new_binary(ND_SUB, left, right, tok);
+        node->ty = left->ty;
         return node;
     }
-    case double_case(TY_INT, TY_PTR):
-        // TODO: Add type printing and better diagnostics.
-        error_tok(tok, "Invalid operation");
-    }
 
-    return NULL;
+    // int - int
+    return new_binary(ND_SUB, left, right, tok);
 }
 
 static Node *
@@ -561,11 +562,12 @@ parse_base_type(Token **tok)
     Type *ty = calloc(1, sizeof(*ty));
     ty->ty_name = expect_skip_id(tok, "int");
     ty->kind = TY_INT;
+    ty->size = 8;
     return ty;
 }
 
 static Type *
-parse_id_declarator(Token **tok, Type *ty)
+parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 {
     // Be aware that right now we are using this function recursively to parse a function declerator and also its parameters. So one could pass a function declarator as a function declaration as parameter which is not defined in C and we do not support it either but for the sake of simplicity we do not care right now.
     while (skip(tok, '*')) ty = pointer_to(ty);
@@ -588,7 +590,9 @@ parse_id_declarator(Token **tok, Type *ty)
         ty->param_count = param_count;
 
     } else if (skip(tok, '[')) {
-        assert(0 && "NOT IMPLEMENTED!");
+        int len = get_number(expect_skip(tok, TK_NUM));
+        expect_skip(tok, ']');
+        ty = array_of(ty, len);
     }
 
     return ty;

@@ -49,7 +49,7 @@ struct Token {
 
 Token *tokenize(File *file);
 Token *new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr);
-void get_tok_line(Token *tok, char **str, int *len);
+int get_number(Token *tok);
 void error_at(File *file, size_t line_nr, size_t offset, char *fmt, ...);
 void diag_tok(Token* tok, char *fmt, ...);
 void error_tok(Token *tok, char *fmt, ...);
@@ -164,16 +164,22 @@ typedef enum {
     TY_INT,
     TY_PTR,
     TY_FUNC,
+    TY_ARRAY,
 } TypeKind;
 char *ty_kind_str(TypeKind kind);
 
 struct Type {
     TypeKind kind;
+    int size;
+
     Token *ty_name;
     Token *id_name;
 
-    // Pointer
-    Type *base; // pointer
+    // Pointer-to or array-of
+    Type *base;
+
+    // Array
+    int array_len;
 
     // Function
     Type *ret_ty;
@@ -185,8 +191,9 @@ struct Type {
 extern Type *ty_int;
 
 bool type_is(Node *node, TypeKind kind);
-Type *pointer_to(Type *base);
 Type *copy_type(Type *ty);
+Type *pointer_to(Type *base);
+Type *array_of(Type *base, int len);
 Type *func_type(Type *ret_ty);
 void add_type(Node *node);
 

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-Type *ty_int = &(Type){TY_INT};
+Type *ty_int = &(Type){ .kind = TY_INT, .size = 8};
 
 char *
 ty_kind_str(TypeKind kind)
@@ -11,6 +11,8 @@ ty_kind_str(TypeKind kind)
     switch (kind) {
         case TY_INT: return "INT";
         case TY_PTR: return "PTR";
+        case TY_FUNC: return "FUNC";
+        case TY_ARRAY: return "ARRAY";
         default:
     }
     return "???";
@@ -31,18 +33,30 @@ copy_type(Type *ty)
 }
 
 Type *
-pointer_to(Type *type)
+pointer_to(Type *base)
 {
     Type *ty = calloc(1, sizeof(*ty));
     ty->kind = TY_PTR;
-    ty->base = type;
+    ty->base = base;
+    ty->size = 8;
+    return ty;
+}
+
+Type *
+array_of(Type *base, int len)
+{
+    Type *ty = copy_type(base);
+    ty->kind = TY_ARRAY;
+    ty->size = base->size * len;
+    ty->base = base;
+    ty->array_len = len;
     return ty;
 }
 
 Type *
 func_type(Type *ret_ty)
 {
-  Type *ty = calloc(1, sizeof(*ty));
+  Type *ty = copy_type(ret_ty);
   ty->kind = TY_FUNC;
   ty->ret_ty = ret_ty;
   return ty;
@@ -81,16 +95,19 @@ add_type(Node *node)
         node->ty = node->var->ty;
         return;
     case ND_ADDR:
-        node->ty = pointer_to(node->lhs->ty);
-        return;
+        if (is_type(node->lhs, TY_ARRAY))
+            node->ty = pointer_to(node->lhs->ty->base);
+        else
+            node->ty = pointer_to(node->lhs->ty);
+        break;
     case ND_DEREF:
-        if (!is_type(node->lhs, TY_PTR)) {
+        if (!node->lhs->ty->base) { // We check baser for pointer-array duality.
             error_tok(node->tok, "Invalid pointer dereference!");
         }
         node->ty = node->lhs->ty->base;
         break;
     case ND_FUNCALL:
-        node->ty = ty_int;
+        node->ty = ty_int; // @Temporary until we drop undeclared function calls.
         break;
     case ND_EXPR_STMT:
     case ND_RETURN:

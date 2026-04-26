@@ -51,6 +51,23 @@ gen_addr(Node *node)
 }
 
 static void
+load(Type *ty)
+{
+    if (ty->kind == TY_ARRAY) {
+        // An array's value is its address which is expected to be already loaded
+        // into %rax by gen_addr.
+        return;
+    }
+    printf("  mov\t(%%rax), %%rax\n");
+}
+
+// Store %rax to an address that the stack top is pointing to.
+static void store(void) {
+    pop("%rdi");
+    printf("  mov %%rax, (%%rdi)\n");
+}
+
+static void
 gen_expr(Node *node)
 {
     NodeKind kind = node->kind;
@@ -65,11 +82,11 @@ gen_expr(Node *node)
         return;
     case ND_VAR:
         gen_addr(node);
-        printf("  mov\t(%%rax), %%rax\n");
+        load(node->ty);
         return;
     case ND_DEREF:
         gen_expr(node->lhs); // first load var from stack to rax.
-        printf("  mov\t(%%rax), %%rax\n");
+        load(node->ty);
         return;
     case ND_ADDR:
         // NOTE: we could also check for lvalueness of lhs here instead of the parser.
@@ -80,8 +97,7 @@ gen_expr(Node *node)
         gen_addr(node->lhs);
         push();
         gen_expr(node->rhs);
-        pop("%rdi");
-        printf("  mov\t%%rax, (%%rdi)\n");
+        store();
         return;
     case ND_FUNCALL:
         int nargs = 0;
@@ -206,7 +222,7 @@ assing_locals_offset(Function *func)
     int offset = 0;
     // NOTE: We expect that this list of locals is in stack order. i.e., last declared stack variable must be assigned the smallest (in magnitude) offset. (closest to the stack base)
     for (Var *var = func->locals; var; var = var->next) {
-        offset -= 8;
+        offset -= var->ty->size;
         var->stack_offset = offset;
     }
     func->stack_size = align_to(-offset, 16);

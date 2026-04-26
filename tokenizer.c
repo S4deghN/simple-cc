@@ -27,6 +27,12 @@ tk_kind_str(TokenKind kind)
     }
 }
 
+int
+get_number(Token *tok)
+{
+    return strtoul(tok->str, NULL, 10);
+}
+
 static void
 __diag_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
