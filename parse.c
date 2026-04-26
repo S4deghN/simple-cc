@@ -81,7 +81,11 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
     char *node_str;
     int node_str_len;
     char *type_str = node->ty ? ty_kind_str(node->ty->kind) : "ø";
-    if (node->kind == ND_NUM || node->kind == ND_VAR || node->kind == ND_FUNCALL) {
+    if (node->kind == ND_NUM) {
+        char tmp[16];
+        node_str = tmp;
+        node_str_len = sprintf(tmp, "%d", node->val);
+    } else if (node->kind == ND_VAR || node->kind == ND_FUNCALL) {
         node_str = node->tok->str;
         node_str_len = node->tok->len;
     } else if (alt_root_name) {
@@ -110,7 +114,7 @@ _print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right
         if (node->init) _print_tree(node->init, prefix_buff, prefix_cursor, 1, NULL, "INIT");
         if (node->cond) _print_tree(node->cond, prefix_buff, prefix_cursor, 1, NULL, "COND");
         if (node->iter) _print_tree(node->iter, prefix_buff, prefix_cursor, 1, NULL, "ITER");
-        if (node->body) _print_tree(node->body, prefix_buff, prefix_cursor, 1, NULL, "BODY");
+        if (node->then) _print_tree(node->then, prefix_buff, prefix_cursor, 1, NULL, "THEN");
         break;
     case ND_BLOCK:
         for (Node *n = node->body; n; n = n->next) {
@@ -247,23 +251,19 @@ new_add(Node *left, Node *right, Token *tok) {
     add_type(left);
     add_type(right);
 
+    // int + int
+    if (type_is(left, TY_INT) && type_is(right, TY_INT)) return new_binary(ND_ADD, left, right, tok);
+
     // ptr + ptr
     if (left->ty->base && right->ty->base) error_tok(tok, "Invalid pointer-pointer addition");
 
-    // ptr + int
-    if (left->ty->base) {
-        right = new_binary(ND_MUL, right, new_implicit_num(tok, left->ty->base->size), tok);
-        return new_binary(ND_ADD, left, right, tok);
-    }
-
     // int + ptr
-    if (right->ty->base) {
-        left = new_binary(ND_MUL, left, new_implicit_num(tok, left->ty->base->size), tok);
-        return new_binary(ND_ADD, left, right, tok);
-    }
+    if (right->ty->base) swap(left, right);
 
-    // int + int
+    // ptr + int
+    right = new_binary(ND_MUL, right, new_implicit_num(tok, left->ty->base->size), tok);
     return new_binary(ND_ADD, left, right, tok);
+
 }
 
 // Overloads '-' for pointer and array arithmetic.
@@ -476,6 +476,18 @@ funcall(Token **tok, Token *mark)
     return node;
 }
 
+static Node *
+parse_right_unary(Token **tok, Node *left) {
+    Token *mark = *tok;
+    if (mark->kind == '[') {
+        *tok = mark->next;
+        Node *right = parse_expr(tok, MIN_PREC);
+        expect_skip(tok, ']');
+        left = new_unary(ND_DEREF, new_add(left, right, mark), mark);
+    }
+    return left;
+}
+
 // right leaning tree builder
 static Node *
 parse_increasing_recedence(Token **tok, Node *left, int min_prec)
@@ -483,7 +495,7 @@ parse_increasing_recedence(Token **tok, Node *left, int min_prec)
     Token *mark = *tok;
 
     int next_prec = get_precedence(mark); // Returns lowest precedence on any non binary operation token so that we stop.
-    if (next_prec < min_prec) return left;
+    if (next_prec < min_prec) return parse_right_unary(tok, left);
 
     (*tok) = (*tok)->next;
 
@@ -512,10 +524,11 @@ static Node *
 parse_leaf(Token **tok)
 {
     Token *mark = *tok;
+    Node *node;
 
     // var
     if (skip(tok, TK_ID)) {
-        if (skip(tok, '(')) { // TEMPORARY: must handle both function and var symbols in the same space and then try to parse "(" ... ")" to see if it's a function call and set appropriate flags and stuff ...
+        if (skip(tok, '(')) { // TEMPORARY: must handle both function and var symbols in the same space and then try to parse "(" ... ")" or "[" ... "]" and then check if it's a correct identifier invocation.
             return funcall(tok, mark);
         }
         return var_node(mark, NULL);
@@ -524,32 +537,32 @@ parse_leaf(Token **tok)
     if (skip(tok, TK_NUM)) return new_num(mark);
     // paren
     if (skip(tok, '(')) {
-        Node *node = parse_expr(tok, MIN_PREC);
+        node = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ')');
         return node;
     }
-    // unary unary operator
-    switch (mark->kind) { // TODO: Extract to a function.
-        case '+':
-            *tok = mark->next;
-            return parse_leaf(tok);
-        case '-':
-            *tok = mark->next;
-            return new_unary(ND_NEG, parse_leaf(tok), mark);
-        case '*':
-            *tok = mark->next;
-            return new_unary(ND_DEREF, parse_leaf(tok), mark);
-        case '&':
-            *tok = mark->next;
-            Node *left = parse_leaf(tok);
-            switch (left->kind) {
-                case ND_VAR: case ND_DEREF:
-                    break;
-                default: error_tok(mark, "Lvalue is required as unary & operand!");
-            }
-            return new_unary(ND_ADDR, left, mark);
-        default:
-            // fallthrough
+    // left unary operator
+    switch (mark->kind) {
+    case '+':
+        *tok = mark->next;
+        return parse_leaf(tok);
+    case '-':
+        *tok = mark->next;
+        return new_unary(ND_NEG, parse_leaf(tok), mark);
+    case '*':
+        *tok = mark->next;
+        return new_unary(ND_DEREF, parse_leaf(tok), mark);
+    case '&':
+        *tok = mark->next;
+        node = parse_leaf(tok);
+        switch (node->kind) {
+            case ND_VAR: case ND_DEREF:
+                break;
+            default: error_tok(mark, "Lvalue is required as unary & operand!");
+        }
+        return new_unary(ND_ADDR, node, mark);
+    default:
+        // fallthrough
     }
 
     error_tok(mark, "Expected a primary token got '%s'!", tk_kind_str(mark->kind));
@@ -588,12 +601,22 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
         }
         ty->params = head.next;
         ty->param_count = param_count;
-
-    } else if (skip(tok, '[')) {
-        int len = get_number(expect_skip(tok, TK_NUM));
-        expect_skip(tok, ']');
-        ty = array_of(ty, len);
+        return ty;
     }
+
+    if (skip(tok, '[')) {
+        // We have to build the array type backward!
+        // We could also use recursion but I don't like it.
+        int i = 0;
+        int len_stack[32];
+        do {
+            len_stack[i++] = get_number(expect_skip(tok, TK_NUM));
+            expect_skip(tok, ']');
+        }
+        while (skip(tok, '['));
+        while (i--) ty = array_of(ty, len_stack[i]);
+    }
+
 
     return ty;
 }

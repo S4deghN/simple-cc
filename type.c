@@ -19,7 +19,7 @@ ty_kind_str(TypeKind kind)
 }
 
 bool
-is_type(Node *node, TypeKind kind)
+type_is(Node *node, TypeKind kind)
 {
     return node->ty->kind == kind;
 }
@@ -95,7 +95,7 @@ add_type(Node *node)
         node->ty = node->var->ty;
         return;
     case ND_ADDR:
-        if (is_type(node->lhs, TY_ARRAY))
+        if (type_is(node->lhs, TY_ARRAY))
             node->ty = pointer_to(node->lhs->ty->base);
         else
             node->ty = pointer_to(node->lhs->ty);
