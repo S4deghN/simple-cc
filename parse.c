@@ -9,7 +9,10 @@
 
 const int MIN_PREC = -1;
 
-Var *locals;
+Token *unnamed;
+
+Ident *locals;
+Ident *globals;
 
 char *
 nd_kind_str(NodeKind kind)
@@ -147,10 +150,10 @@ print_tree(const Node *root, char *prefix)
     _print_tree(root, prefix_buff, strlen(prefix), -1, NULL, NULL);
 }
 
-static Var *
-find_var(Token *tok)
+static Ident *
+find_ident(Token *tok, Ident *scope)
 {
-    for (Var *var = locals; var; var = var->next) {
+    for (Ident *var = scope; var; var = var->next) {
         if (var->tok->len == tok->len &&
             strncmp(var->tok->str,  tok->str, tok->len) == 0) {
             return var;
@@ -202,45 +205,43 @@ new_implicit_num(Token *tok, int val)
     return node;
 }
 
-static Var *
-new_var(Token *tok, Type *ty)
+static void
+set_ident(Ident **ident, Type *ty)
 {
-    if (find_var(tok)) error_tok(tok, "redefinition of var");
+    (*ident)->tok = ty->id_name;
+    (*ident)->ty = ty;
+    if (ty->kind == TY_FUNC) {
+        (*ident)->is_function = true;
+        (*ident)->parameters_count = ty->param_count;
+    }
+}
 
-    Var *var = calloc(1, sizeof(*var));
-    var->tok = tok;
-    var->ty = ty;
+static Ident *
+new_ident(Type *ty, Ident **scope)
+{
+    if (!ty->no_id_name && find_ident(ty->id_name, *scope)) error_tok(ty->id_name, "Redefinition of identifier");
 
-    var->next = locals;
-    locals = var;
+    Ident *ident = calloc(1, sizeof(*ident));
+    set_ident(&ident, ty);
 
-    return var;
+    ident->next = *scope;
+    *scope = ident;
+
+    return ident;
 }
 
 static Node *
-new_var_node(Token *tok, Type *ty)
+ident_node(Token *tok)
 {
-    Node *node = new_node(ND_VAR, tok);
-    node->var = new_var(tok, ty);
-    node->ty = ty;
-    return node;
-}
-
-static Node *
-var_node(Token *tok, Var *var)
-{
-    Node *node;
-
-    if (!var) {
-        var = find_var(tok);
-        if (!var) error_tok(tok, "undefined variable");
-        node = new_node(ND_VAR, tok);
-    } else {
-        node = new_node(ND_VAR, var->tok);
+    Ident *ident = find_ident(tok, locals);
+    if (!ident) {
+        ident = find_ident(tok, globals);
+        if (!ident) error_tok(tok, "Undefined identifier");
     }
 
-    node->var = var;
-    node->ty = var->ty;
+    Node *node = new_node(ident->is_function ? ND_FUNCALL : ND_VAR, tok);
+    node->ident = ident;
+    node->ty = ident->ty;
 
     return node;
 }
@@ -252,7 +253,7 @@ new_add(Node *left, Node *right, Token *tok) {
     add_type(right);
 
     // int + int
-    if (type_is(left, TY_INT) && type_is(right, TY_INT)) return new_binary(ND_ADD, left, right, tok);
+    if (!left->ty->base && !right->ty->base) return new_binary(ND_ADD, left, right, tok);
 
     // ptr + ptr
     if (left->ty->base && right->ty->base) error_tok(tok, "Invalid pointer-pointer addition");
@@ -486,16 +487,16 @@ static Node *parse_leaf(Token **tok);
 static Node *
 funcall(Token **tok, Token *mark)
 {
-    Node head = {0};
-    Node *node = &head;
+    Node *node = ident_node(mark);
 
+    Node head = {0};
+    Node *args = &head;
     for (int i = 0; !skip(tok, ')'); ++i) {
         if (i) expect_skip(tok, ',');
-        node = node->next = parse_expr(tok, MIN_PREC);
+        args = args->next = parse_expr(tok, MIN_PREC);
     }
-
-    node = new_node(ND_FUNCALL, mark);
     node->args = head.next;
+
     return node;
 }
 
@@ -551,10 +552,10 @@ parse_leaf(Token **tok)
 
     // var
     if (skip(tok, TK_ID)) {
-        if (skip(tok, '(')) { // TEMPORARY: must handle both function and var symbols in the same space and then try to parse "(" ... ")" or "[" ... "]" and then check if it's a correct identifier invocation.
+        if (skip(tok, '(')) {
             return funcall(tok, mark);
         }
-        return var_node(mark, NULL);
+        return ident_node(mark);
     }
     // num
     if (skip(tok, TK_NUM)) return new_num(mark);
@@ -614,13 +615,19 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
     // Be aware that right now we are using this function recursively to parse a function declerator and also its parameters. So one could pass a function declarator as a function declaration as parameter which is not defined in C and we do not support it either but for the sake of simplicity we do not care right now.
     while (skip(tok, '*')) ty = pointer_to(ty);
 
-    ty->id_name = expect_skip(tok, TK_ID);
+    if (skip(tok, '(')) error_tok(*tok, "Function pointer is not supported!");
+
+    ty->id_name = skip(tok, TK_ID);
+    if (!ty->id_name) {
+        ty->id_name = ty->ty_name;
+        ty->no_id_name = true;
+    }
 
     if (skip(tok, '(')) {
         ty->ret_ty = copy_type(ty);
         ty->kind = TY_FUNC;
 
-        Type head = {};
+        Type head = {0};
         Type *param = &head;
         int param_count = 0;
         for (; !skip(tok, ')'); ++param_count) {
@@ -664,13 +671,14 @@ parse_var_declaration(Token **tok)
 
         Type *ty = copy_type(base_ty);
         ty = parse_id_declarator(tok, ty);
-        if (ty->kind == TY_FUNC) error_tok(ty->id_name, "Nested function declaration is not supported!");
+        // if (ty->kind == TY_FUNC) error_tok(ty->id_name, "Nested function declaration is not supported!");
+        if (ty->no_id_name) error_tok(ty->ty_name, "Unnamed declaration");
 
-        Var *var = new_var(ty->id_name, ty);
+        Ident *ident = new_ident(ty, &locals);
 
         mark = *tok;
         if (skip(tok, '=')) {
-            Node *left = var_node(NULL, var);
+            Node *left = ident_node(ident->tok);
             Node *right = parse_expr(tok, MIN_PREC);
             Node *binary = new_binary(ND_ASSIGN, left, right, mark);
             body = body->next = new_unary(ND_EXPR_STMT, binary, *tok);
@@ -780,18 +788,31 @@ parse_statement(Token **tok)
     return node;
 }
 
-static Function *
-parse_function_definition(Token **tok)
+static Ident *
+parse_function(Token **tok)
 {
     locals = NULL; // Reset locals for next function.
 
     Type *fn_type = parse_base_type(tok);
     fn_type = parse_id_declarator(tok, fn_type);
 
-    for (Type *param = fn_type->params; param; param = param->next)
-        new_var(param->id_name, param);
+    Ident *ident = find_ident(fn_type->id_name, globals);
 
-    Var *parameters = locals; // right now points to the last function parameter
+    if (ident && ident->is_function) {
+        if ((*tok)->kind == '{') {
+            set_ident(&ident, fn_type);
+        } else {
+            error_tok(fn_type->id_name, "Redefinition of function");
+        }
+    } else {
+        ident = new_ident(fn_type, &globals);
+    }
+
+    for (Type *param = fn_type->params; param; param = param->next)
+        new_ident(param, &locals);
+    ident->parameters = locals; // Right now points to the last function parameter
+
+
     // Later on it's going to be like this:
     //
     // var -> var -> var -> var -> var -> var
@@ -801,39 +822,41 @@ parse_function_definition(Token **tok)
     // So they use the same namespace, and we can easily alocated stack for
     // in the expected order by traversing `locals`
 
-    expect_skip(tok, '{');
-    Node head = {0};
-    Node *body = &head;
-    while (!skip(tok, '}')) {
-        body = body->next = parse_statement(tok);
-        add_type(body);
-        if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
+    // Parse function defenition if provided.
+    if (skip(tok, '{')) {
+        Node head = {0};
+        Node *body = &head;
+        while (!skip(tok, '}')) {
+            body = body->next = parse_statement(tok);
+            add_type(body);
+            if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
+        }
+        Node *node = new_node(ND_BLOCK, fn_type->id_name);
+        node->body = head.next;
+
+        ident->locals = locals;
+        ident->body = node;
+    } else {
+        expect_skip(tok, ';');
     }
-    Node *node = new_node(ND_BLOCK, fn_type->id_name);
-    node->body = head.next;
 
-    Function *func = calloc(1, sizeof(*func));
-    func->tok = fn_type->id_name;
-    func->parameters_count = fn_type->param_count;
-    func->parameters = parameters;
-    func->locals = locals;
-    func->body = node;
-
-    return func;
+    return ident;
 }
 
-Program *
+Ident *
 parse(Token *tok)
 {
-    Function head = {0};
-    Function *func = &head;
+    unnamed = calloc(1, sizeof(*unnamed));
+    *unnamed = *tok;
+    unnamed->kind = TK_ID;
+    unnamed->str = "Unnamed";
+    unnamed->len = strlen(unnamed->str);
+
+    globals = NULL;
 
     while (tok->kind != TK_EOF) {
-        func = func->next = parse_function_definition(&tok);
+        parse_function(&tok);
     }
 
-    Program *prog = calloc(1, sizeof(*prog));
-    prog->functions = head.next;
-
-    return prog;
+    return globals;
 }

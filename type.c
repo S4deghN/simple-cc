@@ -92,7 +92,7 @@ add_type(Node *node)
         node->ty = ty_int;
         return;
     case ND_VAR:
-        node->ty = node->var->ty;
+        node->ty = node->ident->ty;
         return;
     case ND_ADDR:
         if (type_is(node->lhs, TY_ARRAY))

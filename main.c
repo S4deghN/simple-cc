@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-    Program *prog = parse(tk);
-    codegen(prog->functions);
+    Ident *prog = parse(tk);
+    codegen(prog);
     return 0;
 }

@@ -7,7 +7,7 @@ static int depth;
 // based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
 static char *call_reg[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
-static Function *current_fn;
+static Ident *current_fn;
 
 static int
 counter()
@@ -37,7 +37,7 @@ gen_addr(Node *node)
 {
     switch (node->kind) {
     case ND_VAR:
-        printf("  lea %d(%%rbp), %%rax\n", node->var->stack_offset);
+        printf("  lea %d(%%rbp), %%rax\n", node->ident->stack_offset);
         // or
         // printf("  mov\t%%rbp, %%rax\n");
         // printf("  sub\t$%d, %%rax\n", node->var->stack_offset);
@@ -217,11 +217,11 @@ gen_stmt(Node *node)
 }
 
 static void
-assing_locals_offset(Function *func)
+assing_locals_offset(Ident *func)
 {
     int offset = 0;
     // NOTE: We expect that this list of locals is in stack order. i.e., last declared stack variable must be assigned the smallest (in magnitude) offset. (closest to the stack base)
-    for (Var *var = func->locals; var; var = var->next) {
+    for (Ident *var = func->locals; var; var = var->next) {
         offset -= var->ty->size;
         var->stack_offset = offset;
     }
@@ -229,9 +229,12 @@ assing_locals_offset(Function *func)
 }
 
 void
-codegen(Function *functions)
+codegen(Ident *program)
 {
-    for (Function *fn = functions; fn; fn = fn->next) {
+    for (Ident *fn = program; fn; fn = fn->next) {
+        if (!fn->is_function) continue;
+        if (!fn->body) continue; // it's only a declaration
+
         current_fn = fn;
         assing_locals_offset(fn);
 
@@ -246,7 +249,7 @@ codegen(Function *functions)
 
         // Save passed-by-register arguments to the stack
         int i = fn->parameters_count - 1;
-        for (Var *var = fn->parameters; var; var = var->next)
+        for (Ident *var = fn->parameters; var; var = var->next)
             printf("  mov\t%s, %d(%%rbp)\n", call_reg[i--], var->stack_offset);
 
         print_tree(fn->body, "  // ");
