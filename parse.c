@@ -527,7 +527,9 @@ parse_increasing_recedence(Token **tok, Node *left, int min_prec)
     Token *mark = *tok;
 
     int next_prec = get_precedence(mark); // Returns lowest precedence on any non binary operation token so that we stop.
-    if (next_prec < min_prec) return parse_right_unary(tok, left);
+
+    // special case for '=' we need a right leaning tree in case of consecutive assignments
+    if (next_prec + (mark->kind == '=') <= min_prec) return parse_right_unary(tok, left);
 
     (*tok) = (*tok)->next;
 
