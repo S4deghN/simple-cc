@@ -131,7 +131,7 @@ add_type(Node *node)
     add_type(node->then);
     add_type(node->init);
     add_type(node->iter);
-    for (Node *n = node->body; n; n = n->next) add_type(node->body);
+    for (Node *n = node->body; n; n = n->next) add_type(n);
 
     switch (node->kind) {
     case ND_ADD:
