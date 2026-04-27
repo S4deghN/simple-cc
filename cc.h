@@ -159,6 +159,7 @@ void print_tree(const Node *root, char *prefix);
 //
 
 typedef enum {
+    TY_CHAR,
     TY_INT,
     TY_PTR,
     TY_FUNC,
@@ -186,9 +187,9 @@ struct Type {
     int param_count;
 };
 
+extern Type *ty_char;
 extern Type *ty_int;
 
-bool type_is(Node *node, TypeKind kind);
 Type *copy_type(Type *ty);
 Type *pointer_to(Type *base);
 Type *array_of(Type *base, int len);

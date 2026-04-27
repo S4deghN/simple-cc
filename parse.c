@@ -609,13 +609,28 @@ parse_leaf(Token **tok)
     abort();
 }
 
+static bool
+is_typename(Token *tok)
+{
+    return tok_match(tok, "char") || tok_match(tok, "int");
+}
+
 static Type *
 parse_base_type(Token **tok)
 {
-    Type *ty = calloc(1, sizeof(*ty));
-    ty->ty_name = expect_skip_kw(tok, "int");
-    ty->kind = TY_INT;
-    ty->size = 8;
+    Token *name = expect_skip(tok, TK_KEYWORD); // @Temporary, must expect typename.
+    Type *ty;
+
+    if (tok_match(name, "char")) {
+        ty = copy_type(ty_char);
+    } else if (tok_match(name, "int")) {
+        ty = copy_type(ty_int);
+    } else {
+        error_tok(name, "Not a supported type name!");
+    }
+
+    ty->ty_name = name;
+
     return ty;
 }
 
@@ -723,7 +738,7 @@ parse_statement(Token **tok)
     Token *mark = *tok;
 
     // declaration | defenition
-    if (tok_match(*tok, "int")) {
+    if (is_typename(*tok)) {
         Type *base_ty = parse_base_type(tok);
         return parse_var_declaration(tok, base_ty, &locals);
     }

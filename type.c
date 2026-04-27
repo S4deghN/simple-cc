@@ -4,12 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+Type *ty_char = &(Type){ .kind = TY_CHAR, .size = 1};
 Type *ty_int = &(Type){ .kind = TY_INT, .size = 8};
 
 char *
 ty_kind_str(TypeKind kind)
 {
     switch (kind) {
+        case TY_CHAR: return "CHAR";
         case TY_INT: return "INT";
         case TY_PTR: return "PTR";
         case TY_FUNC: return "FUNC";
@@ -20,9 +22,9 @@ ty_kind_str(TypeKind kind)
 }
 
 bool
-type_is(Node *node, TypeKind kind)
+is_integer(Type *ty)
 {
-    return node->ty->kind == kind;
+    return ty->kind == TY_INT || ty->kind == TY_CHAR;
 }
 
 Type *
@@ -153,7 +155,7 @@ add_type(Node *node)
         node->ty = node->obj->ty;
         return;
     case ND_ADDR:
-        if (type_is(node->lhs, TY_ARRAY))
+        if (node->lhs->ty->kind == TY_ARRAY)
             node->ty = pointer_to(node->lhs->ty->base);
         else
             node->ty = pointer_to(node->lhs->ty);
@@ -167,8 +169,8 @@ add_type(Node *node)
     case ND_FUNCALL:
         node->ty = ty_int; // @Temporary until we drop undeclared function calls.
         break;
-    case ND_EXPR_STMT:
     case ND_RETURN:
+    case ND_EXPR_STMT:
     case ND_BLOCK:
     case ND_IF:
     case ND_FOR:

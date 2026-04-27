@@ -134,7 +134,7 @@ static int
 is_keyword(char *str, size_t len)
 {
     static const char *kws[] = {
-        "return", "if", "else", "for", "while", "do", "int", "sizeof",
+        "return", "if", "else", "for", "while", "do", "int", "sizeof", "char"
     };
 
     for (uint i = 0; i < sizeof(kws)/sizeof(*kws); ++i) {

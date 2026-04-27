@@ -5,7 +5,8 @@
 
 static int depth;
 // based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
-static char *call_reg[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+static char *call_reg8[] =  {"%dil", "%sil", "%dl",  "%cl", "%r8b", "%r9b"};
+static char *call_reg64[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
 static Obj *current_fn;
 
@@ -60,13 +61,33 @@ load(Type *ty)
         // into %rax by gen_addr.
         return;
     }
-    printf("  mov\t(%%rax), %%rax\n");
+    switch (ty->size) {
+    case 1:
+        printf("  movsbq\t(%%rax), %%rax\n");
+        break;
+    case 8:
+        printf("  mov\t(%%rax), %%rax\n");
+        break;
+    default:
+        error_tok(ty->id_name, "Size %d type is not supported!");
+    }
 }
 
 // Store %rax to an address that the stack top is pointing to.
-static void store(void) {
+static void
+store(Type *ty)
+{
     pop("%rdi");
-    printf("  mov %%rax, (%%rdi)\n");
+    switch (ty->size) {
+    case 1:
+        printf("  mov %%al, (%%rdi)\n");
+        break;
+    case 8:
+        printf("  mov %%rax, (%%rdi)\n");
+        break;
+    default:
+        error_tok(ty->id_name, "Size %d type is not supported!");
+    }
 }
 
 static void
@@ -99,7 +120,7 @@ gen_expr(Node *node)
         gen_addr(node->lhs);
         push();
         gen_expr(node->rhs);
-        store();
+        store(node->ty);
         return;
     case ND_FUNCALL:
         int nargs = 0;
@@ -109,7 +130,7 @@ gen_expr(Node *node)
             nargs += 1;
         }
         for (int i = nargs - 1; i >= 0; --i) {
-            pop(call_reg[i]);
+            pop(call_reg64[i]);
         }
         printf("  mov\t$0, %%rax\n");
         printf("  call\t%.*s\n", node->tok->len, node->tok->str);
@@ -137,7 +158,7 @@ gen_expr(Node *node)
         printf("  imul\t%%rdi, %%rax\n");
         return;
     case ND_DIV:
-        printf("  cqo\n");
+        printf("  cqo\n"); // lhs is in rax right now.
         printf("  idiv\t%%rdi\n");
         return;
     case ND_EQ:
@@ -266,8 +287,13 @@ emit_text(Obj *prog)
 
         // Save passed-by-register arguments to the stack
         int i = fn->parameters_count - 1;
-        for (Obj *var = fn->parameters; var; var = var->next)
-            printf("  mov\t%s, %d(%%rbp)\n", call_reg[i--], var->stack_offset);
+        for (Obj *var = fn->parameters; var; var = var->next) {
+            if (var->ty->size == 1) {
+                printf("  mov\t%s, %d(%%rbp)\n", call_reg8[i--], var->stack_offset);
+            } else {
+                printf("  mov\t%s, %d(%%rbp)\n", call_reg64[i--], var->stack_offset);
+            }
+        }
 
         print_tree(fn->body, "  // ");
         gen_stmt(fn->body);
