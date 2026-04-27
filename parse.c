@@ -214,6 +214,8 @@ new_obj(Type *ty, Obj **scope)
         if (obj->is_function && !obj->body && func_type_match(ty, obj->ty)) {
             // Use the found obj
             prototype_existed = true;
+        } else if (obj->tok->kind == TK_STR) {
+            return obj;
         } else {
             error_tok(ty->id_name, "Redefinition of identifier");
         }
@@ -238,6 +240,20 @@ new_obj(Type *ty, Obj **scope)
     return obj;
 }
 
+// Always global
+Obj *
+new_string_obj(Token *tok)
+{
+    assert(tok->kind == TK_STR);
+
+    Type *ty = array_of(ty_char, tok->str_data.len); // +1 for null.
+    ty->id_name = tok;
+
+    Obj *obj = new_obj(ty, &globals);
+    obj->init_data = tok->str_data.data;
+
+    return obj;
+}
 static Node *
 obj_node(Token *tok)
 {
@@ -569,6 +585,11 @@ parse_leaf(Token **tok)
     }
     // num
     if (skip(tok, TK_NUM)) return new_num(mark);
+    // str
+    if (skip(tok, TK_STR)) {
+        new_string_obj(mark);
+        return obj_node(mark);
+    }
     // paren
     if (skip(tok, '(')) {
         node = parse_expr(tok, MIN_PREC);

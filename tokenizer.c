@@ -14,6 +14,7 @@ tk_kind_str(TokenKind kind)
         case TK_EOF:     return "EOF";
         case TK_ID:      return "ID";
         case TK_KEYWORD: return "KEYWORD";
+        case TK_STR:     return "STR";
         case TK_NUM:     return "NUM";
         case TK_GREQ:    return "GREQ";
         case TK_LTEQ:    return "LTEQ";
@@ -223,6 +224,28 @@ skip_rel(File *file, size_t i, size_t line_nr, TokenKind *kind)
     return i;
 }
 
+static size_t
+skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
+{
+    size_t len = file->len;
+    char  *str = file->str;
+
+    if (str[i] != '"') return i;
+
+    size_t mark = i;
+    while (++i < len && str[i] != '\n') {
+        if (str[i] == '"') {
+            i += 1;
+            str_data->data = strndup(str + mark + 1, i - mark - 2);
+            str_data->len = i - mark - 1; // +1 for terminating null.
+            return i;
+        }
+    }
+
+    error_at(file, i, line_nr, "Unclosed string litteral!");
+    abort();
+}
+
 Token *
 new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr) {
     Token *tok = calloc(1, sizeof(Token));
@@ -241,6 +264,8 @@ tokenize(File *file)
     char  *str     = file->str;
     size_t line_nr = 1;
 
+    Buff str_data;
+
     Token head = {0};
     Token *tok = &head;
 
@@ -255,18 +280,20 @@ tokenize(File *file)
         size_t mark = i;
         TokenKind kind;
 
-        if ((i = skip_id(file,  i, line_nr)) != mark) {
+        if ((i = skip_id(file, i, line_nr)) != mark) {
             kind = TK_ID;
             if (is_keyword(str + mark, i - mark)) kind = TK_KEYWORD;
         }
-        else if ((i = skip_num(file, i, line_nr)) != mark) { kind = TK_NUM; }
-        else if ((i = skip_rel(file, i, line_nr, &kind)) != mark) {}
+        else if ((i = skip_num   (file, i, line_nr))           != mark) { kind = TK_NUM; }
+        else if ((i = skip_string(file, i, line_nr, &str_data)) != mark) { kind = TK_STR; }
+        else if ((i = skip_rel   (file, i, line_nr, &kind))    != mark) {}
         else if (ispunct(str[i])) { kind = str[i++]; }
         else {
             error_at(file, i, line_nr, "Unknown Syntax!");
         }
 
         tok = tok->next = new_tok(kind, str + mark, i - mark, file, line_nr);
+        if (kind == TK_STR) tok->str_data = str_data;
     }
 
     tok = tok->next = new_tok(TK_EOF, str + i, 0, file, line_nr);

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <stdlib.h>
 
 static int depth;
 // based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
@@ -9,6 +10,13 @@ static char *call_reg8[] =  {"%dil", "%sil", "%dl",  "%cl", "%r8b", "%r9b"};
 static char *call_reg64[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
 static Obj *current_fn;
+
+static void
+new_unique_name(Token **tok) {
+  static int id = 0;
+  (*tok)->str = calloc(1, 20);
+  (*tok)->len = sprintf((*tok)->str, ".L..%d", id++);
+}
 
 static int
 counter()
@@ -20,14 +28,14 @@ counter()
 static void
 push(void)
 {
-    printf("  push\t%%rax\n");
+    printf("  push\t\t%%rax\n");
     depth++;
 }
 
 static void
 pop(char *arg)
 {
-    printf("  pop\t%s\n", arg);
+    printf("  pop\t\t%s\n", arg);
     depth--;
 }
 
@@ -39,10 +47,10 @@ gen_addr(Node *node)
     switch (node->kind) {
     case ND_VAR:
         if (node->obj->is_local) {
-            printf("  lea\t%d(%%rbp), %%rax\n", node->obj->stack_offset);
+            printf("  lea\t\t%d(%%rbp), %%rax\n", node->obj->stack_offset);
         } else {
             Token *tok = node->obj->tok;
-            printf("  lea\t%.*s(%%rip), %%rax\n", tok->len, tok->str);
+            printf("  lea\t\t%.*s(%%rip), %%rax\n", tok->len, tok->str);
         }
         break;
     case ND_DEREF:
@@ -66,7 +74,7 @@ load(Type *ty)
         printf("  movsbq\t(%%rax), %%rax\n");
         break;
     case 8:
-        printf("  mov\t(%%rax), %%rax\n");
+        printf("  mov\t\t(%%rax), %%rax\n");
         break;
     default:
         error_tok(ty->id_name, "Size %d type is not supported!");
@@ -80,10 +88,10 @@ store(Type *ty)
     pop("%rdi");
     switch (ty->size) {
     case 1:
-        printf("  mov %%al, (%%rdi)\n");
+        printf("  mov\t\t%%al, (%%rdi)\n");
         break;
     case 8:
-        printf("  mov %%rax, (%%rdi)\n");
+        printf("  mov\t\t%%rax, (%%rdi)\n");
         break;
     default:
         error_tok(ty->id_name, "Size %d type is not supported!");
@@ -97,11 +105,11 @@ gen_expr(Node *node)
 
     switch (kind) {
     case ND_NUM:
-        printf("  mov\t$%d, %%rax\n", node->val);
+        printf("  mov\t\t$%d, %%rax\n", node->val);
         return;
     case ND_NEG:
         gen_expr(node->lhs);
-        printf("  neg\t%%rax\n");
+        printf("  neg\t\t%%rax\n");
         return;
     case ND_VAR:
         gen_addr(node);
@@ -132,8 +140,8 @@ gen_expr(Node *node)
         for (int i = nargs - 1; i >= 0; --i) {
             pop(call_reg64[i]);
         }
-        printf("  mov\t$0, %%rax\n");
-        printf("  call\t%.*s\n", node->tok->len, node->tok->str);
+        printf("  mov\t\t$0, %%rax\n");
+        printf("  call\t\t%.*s\n", node->tok->len, node->tok->str);
         return;
     default:
         if (!node->rhs || !node->lhs) {
@@ -149,17 +157,17 @@ gen_expr(Node *node)
 
     switch (kind) {
     case ND_ADD:
-        printf("  add\t%%rdi, %%rax\n");
+        printf("  add\t\t%%rdi, %%rax\n");
         return;
     case ND_SUB:
-        printf("  sub\t%%rdi, %%rax\n");
+        printf("  sub\t\t%%rdi, %%rax\n");
         return;
     case ND_MUL:
-        printf("  imul\t%%rdi, %%rax\n");
+        printf("  imul\t\t%%rdi, %%rax\n");
         return;
     case ND_DIV:
         printf("  cqo\n"); // lhs is in rax right now.
-        printf("  idiv\t%%rdi\n");
+        printf("  idiv\t\t%%rdi\n");
         return;
     case ND_EQ:
     case ND_NE:
@@ -167,14 +175,14 @@ gen_expr(Node *node)
     case ND_LTE:
     case ND_GT:
     case ND_GTE:
-        printf("  cmp\t%%rdi, %%rax\n");
-        if      (kind == ND_EQ)  printf("  sete\t%%al\n");
-        else if (kind == ND_NE)  printf("  setne\t%%al\n");
-        else if (kind == ND_LT)  printf("  setl\t%%al\n");
-        else if (kind == ND_LTE) printf("  setle\t%%al\n");
-        else if (kind == ND_GT)  printf("  setg\t%%al\n");
-        else if (kind == ND_GTE) printf("  setge\t%%al\n");
-        printf("  movzb\t%%al, %%rax\n");
+        printf("  cmp\t\t%%rdi, %%rax\n");
+        if      (kind == ND_EQ)  printf("  sete\t\t%%al\n");
+        else if (kind == ND_NE)  printf("  setne\t\t%%al\n");
+        else if (kind == ND_LT)  printf("  setl\t\t%%al\n");
+        else if (kind == ND_LTE) printf("  setle\t\t%%al\n");
+        else if (kind == ND_GT)  printf("  setg\t\t%%al\n");
+        else if (kind == ND_GTE) printf("  setge\t\t%%al\n");
+        printf("  movzb\t\t%%al, %%rax\n");
         return;
     default:
         error("codege: invalid expression");
@@ -192,29 +200,29 @@ gen_stmt(Node *node)
         printf(".L.for_begin.%d:\n", uniq);
         if (node->cond) {
             gen_expr(node->cond);
-            printf("  cmp\t$0, %%rax\n");
-            printf("  je \t.L.for_end.%d\n", uniq);
+            printf("  cmp\t\t$0, %%rax\n");
+            printf("  je \t\t.L.for_end.%d\n", uniq);
         }
         gen_stmt(node->then);
         if (node->iter) gen_expr(node->iter);
-        printf("  jmp\t.L.for_begin.%d\n", uniq);
+        printf("  jmp\t\t.L.for_begin.%d\n", uniq);
         printf(".L.for_end.%d:\n", uniq);
         break;
     case ND_DO:
         printf(".L.do_begin.%d:\n", uniq);
         gen_stmt(node->then);
         gen_expr(node->cond);
-        printf("  cmp\t$0, %%rax\n");
-        printf("  je \t.L.do_end.%d\n", uniq);
-        printf("  jmp\t.L.do_begin.%d\n", uniq);
+        printf("  cmp\t\t$0, %%rax\n");
+        printf("  je \t\t.L.do_end.%d\n", uniq);
+        printf("  jmp\t\t.L.do_begin.%d\n", uniq);
         printf(".L.do_end.%d:\n", uniq);
         break;
     case ND_IF:
         gen_expr(node->cond);
-        printf("  cmp\t$0, %%rax\n");
-        printf("  je \t.L.if_end.%d\n", uniq);
+        printf("  cmp\t\t$0, %%rax\n");
+        printf("  je \t\t.L.if_end.%d\n", uniq);
         gen_stmt(node->then);
-        if (node->els) printf("  jmp\t.L.endelse.%d\n", uniq);
+        if (node->els) printf("  jmp\t\t.L.endelse.%d\n", uniq);
         printf(".L.if_end.%d:\n", uniq);
         if (node->els) {
             gen_stmt(node->els);
@@ -228,7 +236,7 @@ gen_stmt(Node *node)
         break;
     case ND_RETURN:
         gen_expr(node->lhs);
-        printf("  jmp\t.L.return.%.*s\n", current_fn->tok->len, current_fn->tok->str);
+        printf("  jmp\t\t.L.return.%.*s\n", current_fn->tok->len, current_fn->tok->str);
         break;
     case ND_EXPR_STMT:
         gen_expr(node->lhs);
@@ -258,10 +266,18 @@ emit_data(Obj *prog)
     for (Obj *var = prog; var; var = var->next) {
         if (var->is_function) continue;
         tok = var->tok;
+
+        if (tok->kind == TK_STR) new_unique_name(&tok);
+
         printf("  .data\n");
         printf("  .globl %.*s\n", tok->len, tok->str);
         printf("%.*s:\n", tok->len, tok->str);
-        printf("  .zero %d\n", var->ty->size);
+        if (var->init_data) {
+            for (int i = 0; i < var->ty->size; i++)
+                printf("  .byte %d\n", var->init_data[i]);
+        } else {
+            printf("  .zero %d\n", var->ty->size);
+        }
     }
 }
 
@@ -281,17 +297,17 @@ emit_text(Obj *prog)
         printf("%.*s:\n", name->len, name->str);
 
         // prolog
-        printf("  push\t%%rbp\n");
-        printf("  mov\t%%rsp, %%rbp\n");
-        printf("  sub\t$%d, %%rsp\n", fn->stack_size);
+        printf("  push\t\t%%rbp\n");
+        printf("  mov\t\t%%rsp, %%rbp\n");
+        printf("  sub\t\t$%d, %%rsp\n", fn->stack_size);
 
         // Save passed-by-register arguments to the stack
         int i = fn->parameters_count - 1;
         for (Obj *var = fn->parameters; var; var = var->next) {
             if (var->ty->size == 1) {
-                printf("  mov\t%s, %d(%%rbp)\n", call_reg8[i--], var->stack_offset);
+                printf("  mov\t\t%s, %d(%%rbp)\n", call_reg8[i--], var->stack_offset);
             } else {
-                printf("  mov\t%s, %d(%%rbp)\n", call_reg64[i--], var->stack_offset);
+                printf("  mov\t\t%s, %d(%%rbp)\n", call_reg64[i--], var->stack_offset);
             }
         }
 
@@ -301,8 +317,8 @@ emit_text(Obj *prog)
 
         // epilogue
         printf(".L.return.%.*s:\n", name->len, name->str);
-        printf("  mov\t%%rbp, %%rsp\n");
-        printf("  pop\t%%rbp\n");
+        printf("  mov\t\t%%rbp, %%rsp\n");
+        printf("  pop\t\t%%rbp\n");
 
         printf("  ret\n");
     }

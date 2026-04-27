@@ -17,6 +17,11 @@ typedef struct {
     size_t len;
 } File;
 
+typedef struct {
+    char *data;
+    int len;
+} Buff;
+
 char *str_find_next(char *str_end, char *cursor, char c);
 char *str_find_prev(char *str_start, char *cursor, char c);
 int align_to(int n, int align);
@@ -29,8 +34,9 @@ typedef enum {
     TK_EOF = 0,
     // skip litteral ascii tokens
     TK_ID = 128,
-    TK_NUM,
     TK_KEYWORD,
+    TK_STR,
+    TK_NUM,
     TK_GREQ,
     TK_LTEQ,
     TK_EQ,
@@ -46,6 +52,9 @@ struct Token {
     int len;
     size_t line_nr;
     File *file;
+
+    // TK_STR
+    Buff str_data;
 };
 
 Token *tokenize(File *file);
@@ -117,6 +126,9 @@ struct Obj {
 
     // Local variable
     int stack_offset;
+
+    // Global variable
+    char *init_data;
 };
 
 struct Node {
@@ -172,13 +184,16 @@ struct Type {
     int size;
 
     Token *ty_name;
-    Token *id_name;
+    Token *id_name; // Must be always set. Used for searching variables in scope.
 
     // Pointer-to or array-of
     Type *base;
 
     // Array
     int array_len;
+
+    // String
+    char *str_data;
 
     // Function
     Type *ret_ty;
