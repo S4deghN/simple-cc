@@ -97,9 +97,9 @@ char *nd_kind_str(NodeKind kind);
 typedef struct Type Type;
 typedef struct Node Node;
 
-typedef struct Ident Ident;
-struct Ident {
-    Ident *next;
+typedef struct Obj Obj;
+struct Obj {
+    Obj *next;
     Token *tok;
     Type *ty;
 
@@ -107,16 +107,16 @@ struct Ident {
     bool is_local;
 
     // Function
-    Ident *parameters;
+    Obj *parameters;
     size_t parameters_count;
-    Ident *locals;
+    Obj *locals;
     int stack_size;
+
+    // Function body or global assignment
+    Node *body;
 
     // Local variable
     int stack_offset;
-
-
-    Node *body;
 };
 
 struct Node {
@@ -146,10 +146,10 @@ struct Node {
     int val;
 
     // Variable or function call
-    Ident *ident;
+    Obj *obj;
 };
 
-Ident *parse(Token *tok);
+Obj *parse(Token *tok);
 void expect_node(Node *node, NodeKind kind);
 void expect_node_many(Node *node, int n, ...);
 void print_tree(const Node *root, char *prefix);
@@ -172,7 +172,6 @@ struct Type {
 
     Token *ty_name;
     Token *id_name;
-    bool no_id_name; // For unnamed function parameter.
 
     // Pointer-to or array-of
     Type *base;
@@ -194,12 +193,13 @@ Type *copy_type(Type *ty);
 Type *pointer_to(Type *base);
 Type *array_of(Type *base, int len);
 Type *func_type(Type *ret_ty);
+bool func_type_match(Type *a, Type *b);
 void add_type(Node *node);
 
 //
 // codegen.c
 //
 
-void codegen(Ident *program);
+void codegen(Obj *program);
 
 #endif

@@ -9,8 +9,9 @@
 
 const int MIN_PREC = -1;
 
-Ident *locals;
-Ident *globals;
+Obj empty;
+Obj *locals;
+Obj *globals;
 
 char *
 nd_kind_str(NodeKind kind)
@@ -148,10 +149,10 @@ print_tree(const Node *root, char *prefix)
     _print_tree(root, prefix_buff, strlen(prefix), -1, NULL, NULL);
 }
 
-static Ident *
-find_ident(Token *tok, Ident *scope)
+static Obj *
+find_obj(Token *tok, Obj *scope)
 {
-    for (Ident *var = scope; var; var = var->next) {
+    for (Obj *var = scope; var; var = var->next) {
         if (var->tok->len == tok->len &&
             strncmp(var->tok->str,  tok->str, tok->len) == 0) {
             return var;
@@ -203,43 +204,52 @@ new_implicit_num(Token *tok, int val)
     return node;
 }
 
-static void
-set_ident(Ident **ident, Type *ty)
+static Obj *
+new_obj(Type *ty, Obj **scope)
 {
-    (*ident)->tok = ty->id_name;
-    (*ident)->ty = ty;
-    if (ty->kind == TY_FUNC) {
-        (*ident)->is_function = true;
-        (*ident)->parameters_count = ty->param_count;
+    Obj *obj;
+    bool prototype_existed = false;
+
+    if ((obj = find_obj(ty->id_name, *scope))) {
+        if (obj->is_function && !obj->body && func_type_match(ty, obj->ty)) {
+            // Use the found obj
+            prototype_existed = true;
+        } else {
+            error_tok(ty->id_name, "Redefinition of identifier");
+        }
+    } else {
+        obj = calloc(1, sizeof(*obj));
     }
-}
 
-static Ident *
-new_ident(Type *ty, Ident **scope)
-{
-    if (!ty->no_id_name && find_ident(ty->id_name, *scope)) error_tok(ty->id_name, "Redefinition of identifier");
+    obj->tok = ty->id_name;
+    obj->ty = ty;
+    if (ty->kind == TY_FUNC) {
+        obj->is_function = true;
+        obj->parameters_count = ty->param_count;
+    }
 
-    Ident *ident = calloc(1, sizeof(*ident));
-    set_ident(&ident, ty);
+    obj->is_local = (*scope == locals);
 
-    ident->next = *scope;
-    *scope = ident;
+    if (!prototype_existed) { // We already had it on the list so don't make a circle!
+        obj->next = *scope;
+        *scope = obj;
+    }
 
-    return ident;
+    return obj;
 }
 
 static Node *
-ident_node(Token *tok)
+obj_node(Token *tok)
 {
-    Ident *ident = find_ident(tok, locals);
-    if (!ident) {
-        ident = find_ident(tok, globals);
-        if (!ident) error_tok(tok, "Undefined identifier");
+    Obj *obj = find_obj(tok, locals);
+    if (!obj) {
+        obj = find_obj(tok, globals);
+        if (!obj) error_tok(tok, "Undefined identifier");
     }
 
-    Node *node = new_node(ident->is_function ? ND_FUNCALL : ND_VAR, tok);
-    node->ident = ident;
-    node->ty = ident->ty;
+    Node *node = new_node(obj->is_function ? ND_FUNCALL : ND_VAR, tok);
+    node->obj = obj;
+    node->ty = obj->ty;
 
     return node;
 }
@@ -485,7 +495,7 @@ static Node *parse_leaf(Token **tok);
 static Node *
 funcall(Token **tok, Token *mark)
 {
-    Node *node = ident_node(mark);
+    Node *node = obj_node(mark);
 
     Node head = {0};
     Node *args = &head;
@@ -553,7 +563,7 @@ parse_leaf(Token **tok)
         if (skip(tok, '(')) {
             return funcall(tok, mark);
         }
-        return ident_node(mark);
+        return obj_node(mark);
     }
     // num
     if (skip(tok, TK_NUM)) return new_num(mark);
@@ -615,11 +625,7 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 
     if (skip(tok, '(')) error_tok(*tok, "Function pointer is not supported!");
 
-    ty->id_name = skip(tok, TK_ID);
-    if (!ty->id_name) {
-        ty->id_name = ty->ty_name;
-        ty->no_id_name = true;
-    }
+    ty->id_name = expect_skip(tok, TK_ID);
 
     // printf("id = %.*s\n", ty->id_name->len, ty->id_name->str);
 
@@ -632,8 +638,15 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
         int param_count = 0;
         for (; !skip(tok, ')'); ++param_count) {
             if (param_count) expect_skip(tok, ',');
+
             param = param->next = parse_base_type(tok);
-            param = parse_id_declarator(tok, param);
+
+            if ((*tok)->kind == TK_ID) {
+                param = parse_id_declarator(tok, param);
+            } else {
+                while (skip(tok, '*')) param = pointer_to(param);
+            }
+
         }
         ty->params = head.next;
         ty->param_count = param_count;
@@ -658,7 +671,7 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 }
 
 static Node *
-parse_var_declaration(Token **tok, Type *base_ty, Ident **scope)
+parse_var_declaration(Token **tok, Type *base_ty, Obj **scope)
 {
     Token *mark;
 
@@ -670,14 +683,13 @@ parse_var_declaration(Token **tok, Type *base_ty, Ident **scope)
         Type *ty = copy_type(base_ty);
         ty = parse_id_declarator(tok, ty);
         // if (ty->kind == TY_FUNC) error_tok(ty->id_name, "Nested function declaration is not supported!");
-        if (ty->no_id_name) error_tok(ty->ty_name, "Unnamed declaration");
 
-        Ident *ident = new_ident(ty, scope);
-        ident->is_local = (*scope == locals);
+        Obj *obj = new_obj(ty, scope);
+        obj->is_local = (*scope == locals);
 
         mark = *tok;
         if (skip(tok, '=')) {
-            Node *left = ident_node(ident->tok);
+            Node *left = obj_node(obj->tok);
             Node *right = parse_expr(tok, MIN_PREC);
             Node *binary = new_binary(ND_ASSIGN, left, right, mark);
             body = body->next = new_unary(ND_EXPR_STMT, binary, *tok);
@@ -708,6 +720,12 @@ parse_statement(Token **tok)
     Node *node;
     Token *mark = *tok;
 
+    // declaration | defenition
+    if (tok_match(*tok, "int")) {
+        Type *base_ty = parse_base_type(tok);
+        return parse_var_declaration(tok, base_ty, &locals);
+    }
+
     // block statement { ... }
     if (skip(tok, '{')) {
         Node head = {0};
@@ -725,12 +743,6 @@ parse_statement(Token **tok)
         node = new_unary(ND_RETURN, parse_expr(tok, MIN_PREC), mark);
         expect_skip(tok, ';');
         return node;
-    }
-
-    // declaration | defenition
-    if (tok_match(*tok, "int")) {
-        Type *base_ty = parse_base_type(tok);
-        return parse_var_declaration(tok, base_ty, &locals);
     }
 
     // "if" statement
@@ -791,61 +803,70 @@ parse_statement(Token **tok)
 }
 
 static void
-parse_global(Token **tok)
+parse_function_body(Token **tok, Obj *obj)
 {
-    locals = NULL; // Reset locals for next function.
+    locals = NULL; // Reset locals for this functio.
 
-    Type *ty = parse_base_type(tok);
-
-    Token *tok_copy = *tok;
-    Type *lookahed = parse_id_declarator(&tok_copy, copy_type(ty));
-
-    Ident *ident;
-
-    if (lookahed->kind == TY_FUNC) {
-        ty = parse_id_declarator(tok, ty);
-
-        ident = find_ident(ty->id_name, globals);
-        if (ident) {
-            if ((*tok)->kind == '{') {
-                set_ident(&ident, ty);
-            } else {
-                error_tok(ty->id_name, "Redefinition of function");
-            }
-        } else {
-            ident = new_ident(ty, &globals);
-        }
-
-        for (Type *param = ty->params; param; param = param->next) {
-            Ident *i = new_ident(param, &locals);
-            i->is_local = true;
-        }
-        ident->parameters = locals; // Right now points to the last function parameter
-
-        if (skip(tok, '{')) {
-            Node head = {0};
-            Node *body = &head;
-            while (!skip(tok, '}')) {
-                body = body->next = parse_statement(tok);
-                add_type(body);
-                if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
-            }
-            Node *node = new_node(ND_BLOCK, ty->id_name);
-            node->body = head.next;
-
-            ident->locals = locals;
-            ident->body = node;
-        } else {
-            expect_skip(tok, ';');
-        }
-    } else {
-
-        Node *node = parse_var_declaration(tok, ty, &globals);
-        globals->body = node;
+    // Allocate parameters in local scope.
+    for (Type *param = obj->ty->params; param; param = param->next) {
+        new_obj(param, &locals);
     }
+    obj->parameters = locals; // Right now points to the last function parameter
+
+    Node head = {0};
+    Node *body = &head;
+    while (!skip(tok, '}')) {
+        body = body->next = parse_statement(tok);
+        add_type(body);
+        if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
+    }
+    body = new_node(ND_BLOCK, obj->tok);
+    body->body = head.next;
+    obj->body = body;
+
+    obj->locals = locals;
 }
 
-Ident *
+//
+// Generates Objs and puts them in the globals list
+// They may or may not contain as their body a code block (ND_BLOCK).
+//
+static void
+parse_global(Token **tok)
+{
+    Type *ty = parse_base_type(tok);
+
+    // e.g. int;
+    if (skip(tok, ';')) return;
+
+    // For now if we parse a function we don't allocated its parameters in the local scope automatically because we don't support nested scopes and so on.
+    // It must be done by hand for the global outer function declaration.
+    // Also if it's only a declaration, we don't care to allocate its parameters as local objects!
+    for (int i = 0; !skip(tok, ';'); ++i) {
+        if (i) expect_skip(tok, ',');
+
+        ty = parse_id_declarator(tok, ty);
+
+        // Work around so that at the start of the program `globals` and `locals` don't match.
+        // Proper fix is to actually use dynamic array and drop this meaningless linked list stuff.
+        locals = &empty;
+        Obj *obj = new_obj(ty, &globals); // Take the return value in case we want to set a body for it down this path.
+
+        if (i == 0 && obj->is_function && skip(tok, '{')) {
+            parse_function_body(tok, obj); // Will assign body of the object!
+            return;
+        }
+
+        if (!obj->is_function && skip(tok, '=')) {
+            assert(0 && "Not supported yet!");
+            // parse_decl_assignmen();
+            continue;
+        }
+    }
+
+}
+
+Obj *
 parse(Token *tok)
 {
     globals = NULL;

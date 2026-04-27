@@ -7,7 +7,7 @@ static int depth;
 // based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
 static char *call_reg[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
-static Ident *current_fn;
+static Obj *current_fn;
 
 static int
 counter()
@@ -37,10 +37,10 @@ gen_addr(Node *node)
 {
     switch (node->kind) {
     case ND_VAR:
-        if (node->ident->is_local) {
-            printf("  lea\t%d(%%rbp), %%rax\n", node->ident->stack_offset);
+        if (node->obj->is_local) {
+            printf("  lea\t%d(%%rbp), %%rax\n", node->obj->stack_offset);
         } else {
-            Token *tok = node->ident->tok;
+            Token *tok = node->obj->tok;
             printf("  lea\t%.*s(%%rip), %%rax\n", tok->len, tok->str);
         }
         break;
@@ -219,11 +219,11 @@ gen_stmt(Node *node)
 }
 
 static void
-assing_locals_offset(Ident *func)
+assing_locals_offset(Obj *func)
 {
     int offset = 0;
     // NOTE: We expect that this list of locals is in stack order. i.e., last declared stack variable must be assigned the smallest (in magnitude) offset. (closest to the stack base)
-    for (Ident *var = func->locals; var; var = var->next) {
+    for (Obj *var = func->locals; var; var = var->next) {
         offset -= var->ty->size;
         var->stack_offset = offset;
     }
@@ -231,10 +231,10 @@ assing_locals_offset(Ident *func)
 }
 
 static void
-emit_data(Ident *prog)
+emit_data(Obj *prog)
 {
     Token *tok;
-    for (Ident *var = prog; var; var = var->next) {
+    for (Obj *var = prog; var; var = var->next) {
         if (var->is_function) continue;
         tok = var->tok;
         printf("  .data\n");
@@ -245,9 +245,9 @@ emit_data(Ident *prog)
 }
 
 static void
-emit_text(Ident *prog)
+emit_text(Obj *prog)
 {
-    for (Ident *fn = prog; fn; fn = fn->next) {
+    for (Obj *fn = prog; fn; fn = fn->next) {
         if (!fn->is_function) continue;
         if (!fn->body) continue; // it's only a declaration
 
@@ -266,7 +266,7 @@ emit_text(Ident *prog)
 
         // Save passed-by-register arguments to the stack
         int i = fn->parameters_count - 1;
-        for (Ident *var = fn->parameters; var; var = var->next)
+        for (Obj *var = fn->parameters; var; var = var->next)
             printf("  mov\t%s, %d(%%rbp)\n", call_reg[i--], var->stack_offset);
 
         print_tree(fn->body, "  // ");
@@ -283,7 +283,7 @@ emit_text(Ident *prog)
 }
 
 void
-codegen(Ident *prog)
+codegen(Obj *prog)
 {
   emit_data(prog);
   emit_text(prog);

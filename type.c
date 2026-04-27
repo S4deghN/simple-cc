@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 Type *ty_int = &(Type){ .kind = TY_INT, .size = 8};
 
@@ -62,6 +63,63 @@ func_type(Type *ret_ty)
   return ty;
 }
 
+int
+ptr_indirection(Type *ty)
+{
+    int count = 0;
+    for (Type *c = ty; c->base; c = c->base) {
+        ++count;
+    }
+    return count;
+}
+
+bool
+ptr_type_match(Type *a, Type *b)
+{
+    if (!a->base || !b->base) return false;
+
+    int a_indir = 0;
+    Type *a_base;
+    for (a_base = a; a_base->base; a_base = a_base->base) {
+        ++a_indir;
+    }
+
+    int b_indir = 0;
+    Type *b_base;
+    for (b_base = b; b_base->base; b_base = b_base->base) {
+        ++b_indir;
+    }
+
+    if (a_indir != b_indir) return false;
+    if (a_base->kind != b_base->kind) return false;
+
+    return true;
+}
+
+bool
+func_type_match(Type *a, Type *b)
+{
+    if (a->kind != b->kind) return false;
+    if (a->kind != TY_FUNC) return false;
+    if (a->ret_ty->kind != b->ret_ty->kind) return false;
+    if (a->ret_ty->kind == TY_PTR && !ptr_type_match(a->ret_ty, b->ret_ty)) return false;
+    if (a->param_count != b->param_count) return false;
+
+    Type *ap = a->params;
+    Type *bp = b->params;
+    for (int i = 0; i < a->param_count; ++i) {
+        if (ap->kind != bp->kind) return false;
+        if (ap->kind == TY_FUNC && !func_type_match(ap, bp)) return false;
+        ap = ap->next;
+        bp = bp->next;
+    }
+
+    if (a->id_name->len != b->id_name->len ||
+        strncmp(a->id_name->str, b->id_name->str, a->id_name->len) != 0) return false;
+
+    return true;
+}
+
 void
 add_type(Node *node)
 {
@@ -92,7 +150,7 @@ add_type(Node *node)
         node->ty = ty_int;
         return;
     case ND_VAR:
-        node->ty = node->ident->ty;
+        node->ty = node->obj->ty;
         return;
     case ND_ADDR:
         if (type_is(node->lhs, TY_ARRAY))

@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-    Ident *prog = parse(tk);
+    Obj *prog = parse(tk);
 
     // for (Ident *g = prog; g; g = g->next) {
     //     if (g->body) print_tree(g->body, "  // ");
