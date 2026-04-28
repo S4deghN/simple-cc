@@ -302,6 +302,32 @@ skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
     return i + 1; // Consume '"'
 }
 
+static size_t
+skip_comment(File *file, size_t i, size_t *line_nr)
+{
+    char *str = file->str;
+    size_t len = file->len;
+
+    if (str[i] != '/') return i;
+    if (i + 1 >= len)  return i;
+
+    if (str[i+1] == '/') {
+        while (++i < len && str[i] != '\n');
+        return i;
+    }
+
+    if (str[i+1] == '*') {
+        while (++i < len) {
+            if (str[i] == '*' && ++i < len && str[i] == '/') return i + 1;
+            if (str[i] == '\n') *line_nr += 1;
+        }
+        return i;
+    }
+
+    return i;
+}
+
+
 Token *
 new_tok(TokenKind kind, char *str, size_t len, File *file, size_t line_nr) {
     Token *tok = calloc(1, sizeof(Token));
@@ -320,6 +346,7 @@ tokenize(File *file)
     char  *str     = file->str;
     size_t line_nr = 1;
 
+    TokenKind kind;
     Buff str_data;
 
     Token head = {0};
@@ -334,7 +361,8 @@ tokenize(File *file)
         }
 
         size_t mark = i;
-        TokenKind kind;
+
+        if ((i = skip_comment(file, i, &line_nr)) != mark) continue;
 
         if ((i = skip_id(file, i, line_nr)) != mark) {
             kind = TK_ID;

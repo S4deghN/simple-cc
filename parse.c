@@ -10,153 +10,72 @@
 const int MIN_PREC = -1;
 
 Obj empty;
-Obj *locals;
-Obj *globals;
 
-char *
-nd_kind_str(NodeKind kind)
+typedef struct Scope Scope;
+struct Scope {
+    Scope *next;
+    Obj *objs;
+};
+
+Scope *const global = &(Scope){0};
+Scope *scope = global;
+
+Scope *fn_scope = &(Scope){0};
+
+static void
+enter_scope()
 {
-    switch (kind) {
-        case ND_ADD: return "ADD";
-        case ND_SUB: return "SUB";
-        case ND_MUL: return "MUL";
-        case ND_DIV: return "DIV";
-        case ND_NUM: return "NUM";
-        case ND_NEG: return "NEG";
-        case ND_LT:  return "LT";
-        case ND_LTE: return "LTE";
-        case ND_GT:  return "GT";
-        case ND_GTE: return "GTE";
-        case ND_EQ:  return "EQ";
-        case ND_NE:  return "NE";
-        case ND_VAR: return "VAR";
-        case ND_ASSIGN: return "ASSIGN";
-        case ND_RETURN: return "RETURN";
-        case ND_EXPR_STMT:  return "EXPR_STMT";
-        case ND_BLOCK:  return "BLOCK";
-        case ND_IF:  return "IF";
-        case ND_FOR:  return "FOR";
-        case ND_DO:  return "DO";
-        case ND_ADDR:  return "ADDR";
-        case ND_DEREF:  return "DEREF";
-        case ND_FUNCALL:  return "FUNCALL";
-        default: return "???";
-    }
+    Scope *sc = calloc(1, sizeof(*sc));
+    sc->next = scope;
+    scope = sc;
 }
 
 static void
-get_stmt_str(Token *tok, char **str, int *len)
+leave_scope()
 {
-    char *line_start;
-    if (tok->str == tok->file->str) line_start = tok->str;
-    else line_start = str_find_prev(tok->file->str, tok->str - 1, ';'); // Go back one step in case we are on a ';'
-    if (*line_start == ';') line_start += 1; // skip previous ';'
-    char *line_end   = str_find_next(tok->file->str + tok->file->len, tok->str, ';') + 1;
+    // Save objects of the leaving scope to fn_scope.
+    Obj *obj_start = scope->objs;
+    if (obj_start) {
+        Obj *obj_end = obj_start;
+        for (; obj_end->next; obj_end = obj_end->next);
+        obj_end->next = fn_scope->objs;
+        fn_scope->objs = obj_start;
+    }
 
-    *str = line_start;
-    *len = line_end - line_start;
+    scope = scope->next;
 }
 
+static bool
+is_local_scope(Scope *sc)
+{
+    return sc->next != NULL;
+}
 
 static void
-_print_tree(const Node *node, char *prefix_buff, int prefix_cursor, int is_right, char *alt_root_name, char *wrap)
+insert_scope_obj(Scope *sc, Obj *obj)
 {
-    if (!node) return;
-
-    char *add;
-    char *fmt;
-    char *wrap_fmt;
-    if (is_right == -1) { // root
-        fmt = "%.*s%.*s: %s\n";
-        wrap_fmt = "%.*s%s(%.*s): %s\n";
-        add = "";
-    } else if (is_right) { // right branch
-        fmt = "%.*s├─ %.*s: %s\n";
-        wrap_fmt = "%.*s├─ %s(%.*s): %s\n";
-        add = "│  ";
-    } else { // left branch
-        fmt = "%.*s└─ %.*s: %s\n";
-        wrap_fmt = "%.*s└─ %s(%.*s): %s\n";
-        add = "   ";
-    }
-
-    char *node_str;
-    int node_str_len;
-    char *type_str = node->ty ? ty_kind_str(node->ty->kind) : "ø";
-    if (node->kind == ND_NUM) {
-        char tmp[16];
-        node_str = tmp;
-        node_str_len = sprintf(tmp, "%d", node->val);
-    } else if (node->kind == ND_VAR || node->kind == ND_FUNCALL) {
-        node_str = node->tok->str;
-        node_str_len = node->tok->len;
-    } else if (alt_root_name) {
-        node_str = alt_root_name;
-        node_str_len = strlen(alt_root_name);
-    } else {
-        node_str = nd_kind_str(node->kind);
-        node_str_len = strlen(node_str);
-    }
-
-    if (wrap)
-        printf(wrap_fmt, prefix_cursor, prefix_buff, wrap, node_str_len, node_str, type_str);
-    else
-        printf(fmt, prefix_cursor, prefix_buff, node_str_len, node_str, type_str);
-
-    memcpy(&prefix_buff[prefix_cursor], add, strlen(add));
-    prefix_cursor += strlen(add);
-
-    switch (node->kind) {
-    case ND_IF:
-        _print_tree(node->cond, prefix_buff, prefix_cursor, 1, NULL, "COND");
-        _print_tree(node->then, prefix_buff, prefix_cursor, 1, NULL, "THEN");
-        _print_tree(node->els,  prefix_buff, prefix_cursor, 1, NULL, "ELSE");
-        break;
-    case ND_FOR:
-        if (node->init) _print_tree(node->init, prefix_buff, prefix_cursor, 1, NULL, "INIT");
-        if (node->cond) _print_tree(node->cond, prefix_buff, prefix_cursor, 1, NULL, "COND");
-        if (node->iter) _print_tree(node->iter, prefix_buff, prefix_cursor, 1, NULL, "ITER");
-        if (node->then) _print_tree(node->then, prefix_buff, prefix_cursor, 1, NULL, "THEN");
-        break;
-    case ND_BLOCK:
-        for (Node *n = node->body; n; n = n->next) {
-            _print_tree(n, prefix_buff, prefix_cursor, 1, NULL, NULL);
-        }
-        break;
-    case ND_FUNCALL:
-        for (Node *n = node->args; n; n = n->next) {
-            _print_tree(n, prefix_buff, prefix_cursor, 1, NULL, NULL);
-        }
-        break;
-    default:
-        // Recurse: right then left so right appears above left
-        _print_tree(node->rhs, prefix_buff, prefix_cursor, 1, NULL, NULL);
-        _print_tree(node->lhs, prefix_buff, prefix_cursor, 0, NULL, NULL);
-    }
-}
-
-void
-print_tree(const Node *root, char *prefix)
-{
-    // char *line;
-    // int line_len;
-    // get_stmt_str(root->tok, &line, &line_len);
-    // printf("%s%.*s\n", prefix, line_len, line);
-
-    char prefix_buff[256]; // must be big enough or segfault
-    memcpy(prefix_buff, prefix, strlen(prefix));
-
-    _print_tree(root, prefix_buff, strlen(prefix), -1, NULL, NULL);
+    obj->next = sc->objs;
+    sc->objs = obj;
 }
 
 static Obj *
-find_obj(Token *tok, Obj *scope)
+find_obj_this_scope(Token *tok, Scope *sc)
 {
-    for (Obj *var = scope; var; var = var->next) {
-        if (var->tok->len == tok->len &&
-            strncmp(var->tok->str,  tok->str, tok->len) == 0) {
-            return var;
+    for (Obj *obj = sc->objs; obj; obj = obj->next) {
+        if (obj->tok->len == tok->len &&
+            strncmp(obj->tok->str,  tok->str, tok->len) == 0) {
+            return obj;
         }
+    }
+    return NULL;
+}
+
+static Obj *
+find_obj(Token *tok)
+{
+    for (Scope *sc = scope; sc; sc = sc->next) {
+        Obj *obj = find_obj_this_scope(tok, sc);
+        if (obj) return obj;
     }
     return NULL;
 }
@@ -205,12 +124,12 @@ new_implicit_num(Token *tok, int val)
 }
 
 static Obj *
-new_obj(Type *ty, Obj **scope)
+new_obj(Type *ty, Scope *scope)
 {
     Obj *obj;
     bool prototype_existed = false;
 
-    if ((obj = find_obj(ty->id_name, *scope))) {
+    if ((obj = find_obj_this_scope(ty->id_name, scope))) {
         if (obj->is_function && !obj->body && func_type_match(ty, obj->ty)) {
             // Use the found obj
             prototype_existed = true;
@@ -230,11 +149,10 @@ new_obj(Type *ty, Obj **scope)
         obj->parameters_count = ty->param_count;
     }
 
-    obj->is_local = (*scope == locals);
+    obj->is_local = is_local_scope(scope);
 
     if (!prototype_existed) { // We already had it on the list so don't make a circle!
-        obj->next = *scope;
-        *scope = obj;
+        insert_scope_obj(scope, obj);
     }
 
     return obj;
@@ -249,7 +167,7 @@ new_string_obj(Token *tok)
     Type *ty = array_of(ty_char, tok->str_data.len); // +1 for null.
     ty->id_name = tok;
 
-    Obj *obj = new_obj(ty, &globals);
+    Obj *obj = new_obj(ty, global);
     obj->init_data = tok->str_data.data;
 
     return obj;
@@ -257,11 +175,8 @@ new_string_obj(Token *tok)
 static Node *
 obj_node(Token *tok)
 {
-    Obj *obj = find_obj(tok, locals);
-    if (!obj) {
-        obj = find_obj(tok, globals);
-        if (!obj) error_tok(tok, "Undefined identifier");
-    }
+    Obj *obj = find_obj(tok);
+    if (!obj) error_tok(tok, "Undefined identifier");
 
     Node *node = new_node(obj->is_function ? ND_FUNCALL : ND_VAR, tok);
     node->obj = obj;
@@ -519,6 +434,7 @@ funcall(Token **tok, Token *mark)
     for (int i = 0; !skip(tok, ')'); ++i) {
         if (i) expect_skip(tok, ',');
         args = args->next = parse_expr(tok, MIN_PREC);
+        add_type(args);
     }
     node->args = head.next;
 
@@ -715,7 +631,7 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 }
 
 static Node *
-parse_var_declaration(Token **tok, Type *base_ty, Obj **scope)
+parse_var_declaration(Token **tok, Type *base_ty)
 {
     Token *mark;
 
@@ -728,8 +644,8 @@ parse_var_declaration(Token **tok, Type *base_ty, Obj **scope)
         ty = parse_id_declarator(tok, ty);
         // if (ty->kind == TY_FUNC) error_tok(ty->id_name, "Nested function declaration is not supported!");
 
-        Obj *obj = new_obj(ty, scope);
-        obj->is_local = (*scope == locals);
+        Obj *obj = new_obj(ty, scope); // TODO: Refactor and use in global scope too.
+        obj->is_local = 1;
 
         mark = *tok;
         if (skip(tok, '=')) {
@@ -767,11 +683,12 @@ parse_statement(Token **tok)
     // declaration | defenition
     if (is_typename(*tok)) {
         Type *base_ty = parse_base_type(tok);
-        return parse_var_declaration(tok, base_ty, &locals);
+        return parse_var_declaration(tok, base_ty);
     }
 
-    // block statement { ... }
+    // compound statement { ... }
     if (skip(tok, '{')) {
+        enter_scope();
         Node head = {0};
         node = &head;
         while (!skip(tok, '}')) {
@@ -779,6 +696,7 @@ parse_statement(Token **tok)
         }
         node = new_node(ND_BLOCK, mark);
         node->body = head.next;
+        leave_scope();
         return node;
     }
 
@@ -849,18 +767,20 @@ parse_statement(Token **tok)
 static void
 parse_function_body(Token **tok, Obj *obj)
 {
-    locals = NULL; // Reset locals for this functio.
+    fn_scope->objs = NULL;
+    enter_scope();
 
     // Allocate parameters in local scope.
     for (Type *param = obj->ty->params; param; param = param->next) {
-        new_obj(param, &locals);
+        new_obj(param, scope);
     }
-    obj->parameters = locals; // Right now points to the last function parameter
+    obj->parameters = scope->objs; // Right now points to the last function parameter
 
     Node head = {0};
     Node *body = &head;
     while (!skip(tok, '}')) {
         body = body->next = parse_statement(tok);
+        if (body->kind == ND_STMT_EXPR) printf("We here!\n");
         add_type(body);
         if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
     }
@@ -868,7 +788,8 @@ parse_function_body(Token **tok, Obj *obj)
     body->body = head.next;
     obj->body = body;
 
-    obj->locals = locals;
+    leave_scope();
+    obj->locals = fn_scope->objs;
 }
 
 //
@@ -883,18 +804,12 @@ parse_global(Token **tok)
     // e.g. int;
     if (skip(tok, ';')) return;
 
-    // For now if we parse a function we don't allocated its parameters in the local scope automatically because we don't support nested scopes and so on.
-    // It must be done by hand for the global outer function declaration.
-    // Also if it's only a declaration, we don't care to allocate its parameters as local objects!
     for (int i = 0; !skip(tok, ';'); ++i) {
         if (i) expect_skip(tok, ',');
 
         ty = parse_id_declarator(tok, ty);
 
-        // Work around so that at the start of the program `globals` and `locals` don't match.
-        // Proper fix is to actually use dynamic array and drop this meaningless linked list stuff.
-        locals = &empty;
-        Obj *obj = new_obj(ty, &globals); // Take the return value in case we want to set a body for it down this path.
+        Obj *obj = new_obj(ty, global); // Take the return value in case we want to set a body for it down this path.
 
         if (i == 0 && obj->is_function && skip(tok, '{')) {
             parse_function_body(tok, obj); // Will assign body of the object!
@@ -913,11 +828,9 @@ parse_global(Token **tok)
 Obj *
 parse(Token *tok)
 {
-    globals = NULL;
-
     while (tok->kind != TK_EOF) {
         parse_global(&tok);
     }
 
-    return globals;
+    return global->objs;
 }
