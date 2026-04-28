@@ -596,17 +596,18 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
         Type head = {0};
         Type *param = &head;
         int param_count = 0;
-        for (; !skip(tok, ')'); ++param_count) {
+        for (Type *tmp; !skip(tok, ')'); ++param_count) {
             if (param_count) expect_skip(tok, ',');
 
-            param = param->next = parse_base_type(tok);
+            tmp = parse_base_type(tok);
 
-            while (skip(tok, '*')) param = pointer_to(param);
+            while (skip(tok, '*')) tmp = pointer_to(tmp);
 
             if ((*tok)->kind == TK_ID) {
-                param = parse_id_declarator(tok, param);
+                tmp = parse_id_declarator(tok, tmp);
             }
 
+            param = param->next = tmp;
         }
         ty->params = head.next;
         ty->param_count = param_count;
