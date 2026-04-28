@@ -98,6 +98,8 @@ store(Type *ty)
     }
 }
 
+static void gen_stmt(Node *node);
+
 static void
 gen_expr(Node *node)
 {
@@ -143,6 +145,11 @@ gen_expr(Node *node)
         printf("  mov\t\t$0, %%rax\n");
         printf("  call\t\t%.*s\n", node->tok->len, node->tok->str);
         return;
+    case ND_STMT_EXPR:
+        for (Node *n = node->body; n; n = n->next)
+            gen_stmt(n);
+        return;
+
     default:
         if (!node->rhs || !node->lhs) {
             print_tree(node, "");

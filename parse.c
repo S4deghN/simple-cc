@@ -504,8 +504,9 @@ tok_to_binary_op(Token *tok)
 #pragma GCC diagnostic pop
 }
 
-static Node *parse_expr(Token **tok, int min_prec);
 static Node *parse_leaf(Token **tok);
+static Node *parse_expr(Token **tok, int min_prec);
+static Node *parse_statement(Token **tok);
 
 // funcall = (expr ("," expr)*)?
 static Node *
@@ -592,7 +593,12 @@ parse_leaf(Token **tok)
     }
     // paren
     if (skip(tok, '(')) {
-        node = parse_expr(tok, MIN_PREC);
+        if ((*tok)->kind == '{') { // statement-expression
+            node = parse_statement(tok); // will parse a compound with body
+            node->kind = ND_STMT_EXPR;
+        } else { // expression-statement
+            node = parse_expr(tok, MIN_PREC);
+        }
         expect_skip(tok, ')');
         return node;
     }

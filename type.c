@@ -169,6 +169,17 @@ add_type(Node *node)
     case ND_FUNCALL:
         node->ty = ty_int; // @Temporary until we drop undeclared function calls.
         break;
+    case ND_STMT_EXPR:
+        if (node->body) {
+            Node *last_stmt = node->body;
+            while (last_stmt->next) last_stmt = last_stmt->next;
+            if (last_stmt->kind == ND_EXPR_STMT) { // Right now only expression statements are typed!
+                node->ty = last_stmt->lhs->ty;
+                return;
+            }
+        }
+        error_tok(node->tok, "Statement expression returning void is not supported!");
+        break;
     case ND_RETURN:
     case ND_EXPR_STMT:
     case ND_BLOCK:

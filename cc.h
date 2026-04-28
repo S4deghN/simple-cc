@@ -100,6 +100,7 @@ typedef enum {
     ND_FOR,        // "for" or "while"
     ND_DO,         // "do while"
     ND_EXPR_STMT,
+    ND_STMT_EXPR, // GNU extenstion: ({ ... })
 } NodeKind;
 char *nd_kind_str(NodeKind kind);
 
