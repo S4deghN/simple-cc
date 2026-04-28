@@ -587,8 +587,6 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 
     ty->id_name = expect_skip(tok, TK_ID);
 
-    // printf("id = %.*s\n", ty->id_name->len, ty->id_name->str);
-
     if (skip(tok, '(')) {
         ty->ret_ty = copy_type(ty);
         ty->kind = TY_FUNC;
@@ -781,7 +779,6 @@ parse_function_body(Token **tok, Obj *obj)
     Node *body = &head;
     while (!skip(tok, '}')) {
         body = body->next = parse_statement(tok);
-        if (body->kind == ND_STMT_EXPR) printf("We here!\n");
         add_type(body);
         if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
     }
