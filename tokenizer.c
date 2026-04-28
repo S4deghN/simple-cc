@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 char *
 tk_kind_str(TokenKind kind)
@@ -224,6 +225,44 @@ skip_rel(File *file, size_t i, size_t line_nr, TokenKind *kind)
     return i;
 }
 
+static unsigned int
+read_escape_sequence(char *str, size_t *j) // Bounds checking already done.
+{
+    size_t i = *j;
+
+    if (is_oct_digit(str[i])) {
+        unsigned int num = 0;
+        for (int k = 0; k < 3 && is_oct_digit(str[i]); ++k, ++i) { // Only three octal digis
+            num = (num << 3) + (str[i] - '0');
+        }
+
+        *j = i;
+        return num;
+    }
+
+    if (str[i] == 'x') {
+        ++i;
+        char *end;
+        unsigned int num = strtoll(&str[i], &end, 16);
+
+        *j += (end - &str[i]);
+        return num;
+    }
+
+
+    switch (str[*j]) {
+        case 'a': return '\a';
+        case 'b': return '\b';
+        case 't': return '\t';
+        case 'n': return '\n';
+        case 'v': return '\v';
+        case 'f': return '\f';
+        case 'r': return '\r';
+        case 'e': return 27; // [GNU] \e for the ASCII escape character is a GNU C extension.
+        default: return str[*j];
+    }
+}
+
 static size_t
 skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
 {
@@ -233,17 +272,34 @@ skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
     if (str[i] != '"') return i;
 
     size_t mark = i;
-    while (++i < len && str[i] != '\n') {
-        if (str[i] == '"') {
-            i += 1;
-            str_data->data = strndup(str + mark + 1, i - mark - 2);
-            str_data->len = i - mark - 1; // +1 for terminating null.
-            return i;
-        }
-    }
+    while (++i < len && str[i] != '"' && str[i] != '\n');
+    if (str[i] != '"') error_at(file, i, line_nr, "Unclosed string litteral!");
 
-    error_at(file, i, line_nr, "Unclosed string litteral!");
-    abort();
+    // NOTE: We need a -1 to get size of string between the '"' and a +1 for null termination!
+    // We also might allocated a bit over because of escape sequences.
+    char *data = calloc(i - mark, sizeof(char));
+
+    size_t data_len = 0;
+    for (size_t j = mark + 1; j < i; ++j) {
+        if (str[j] == '"') break;
+
+        if (str[j] == '\\') {
+            ++j;
+            data[data_len++] = read_escape_sequence(str, &j);
+            ++j;
+        }
+
+        data[data_len++] = str[j];
+    }
+    data[data_len++] = '\0';
+
+    str_data->data = data;
+    str_data->len = data_len;
+
+    assert(data_len <= i - mark);
+    // printf("data_len = %lu, i - mark = %lu\n", data_len, i - mark);
+
+    return i + 1; // Consume '"'
 }
 
 Token *
