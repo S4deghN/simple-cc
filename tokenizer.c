@@ -327,7 +327,7 @@ tokenize(File *file)
 
     size_t i = 0;
     for (; i < len;) {
-        if (isspace(str[i])) {
+        if (isspace(str[i]) || str[i] == '\0') {
             if (str[i] == '\n') line_nr += 1;
             ++i;
             continue;

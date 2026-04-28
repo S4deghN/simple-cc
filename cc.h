@@ -25,6 +25,7 @@ typedef struct {
 char *str_find_next(char *str_end, char *cursor, char c);
 char *str_find_prev(char *str_start, char *cursor, char c);
 int align_to(int n, int align);
+File read_entire_file(const char *path);
 
 //
 // tokenize.c

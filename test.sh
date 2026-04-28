@@ -6,7 +6,7 @@ assert() {
   expected="$1"
   input="$2"
 
-  $compiler "$input" > tmp.s || exit
+  echo "$input" | $compiler - > tmp.s || exit
   gcc -static -o tmp tmp.s tmp2.o
   ./tmp
   actual="$?"
