@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 //
 // utils.c
@@ -218,6 +219,6 @@ void add_type(Node *node);
 // codegen.c
 //
 
-void codegen(Obj *program);
+void codegen(Obj *prog, FILE* out);
 
 #endif

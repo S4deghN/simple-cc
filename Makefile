@@ -18,6 +18,7 @@ bin/:
 
 test: bin/compiler
 	./test.sh
+	./test-driver.sh
 
 clean:
 	rm -rf bin core.* a.out tmp*

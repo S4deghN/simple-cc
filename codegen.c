@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdarg.h>
+
+static FILE *output_file;
 
 static int depth;
 // based on this: https://en.wikipedia.org/wiki/X86_calling_conventions#List_of_x86_calling_conventions, syscalls use %r10 instread of %rcx
@@ -16,9 +19,9 @@ println(char *fmt, ...)
 {
   va_list ap;
   va_start(ap, fmt);
-  vprintf(fmt, ap);
+  vfprintf(output_file, fmt, ap);
   va_end(ap);
-  printf("\n");
+  fprintf(output_file, "\n");
 }
 
 static void
@@ -342,8 +345,9 @@ emit_text(Obj *prog)
 }
 
 void
-codegen(Obj *prog)
+codegen(Obj *prog, FILE* out)
 {
-  emit_data(prog);
-  emit_text(prog);
+    output_file = out;
+    emit_data(prog);
+    emit_text(prog);
 }
