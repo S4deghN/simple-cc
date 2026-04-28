@@ -679,10 +679,10 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 
             param = param->next = parse_base_type(tok);
 
+            while (skip(tok, '*')) param = pointer_to(param);
+
             if ((*tok)->kind == TK_ID) {
                 param = parse_id_declarator(tok, param);
-            } else {
-                while (skip(tok, '*')) param = pointer_to(param);
             }
 
         }
