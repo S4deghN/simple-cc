@@ -183,6 +183,7 @@ add_type(Node *node)
         break;
     case ND_RETURN:
     case ND_EXPR_STMT:
+        node->ty = node->lhs->ty;
     case ND_BLOCK:
     case ND_IF:
     case ND_FOR:
