@@ -133,6 +133,7 @@ add_type(Node *node)
     add_type(node->then);
     add_type(node->init);
     add_type(node->iter);
+    add_type(node->els);
     for (Node *n = node->body; n; n = n->next) add_type(n);
 
     switch (node->kind) {
