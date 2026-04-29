@@ -1,12 +1,5 @@
 #include "cc.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <stdarg.h>
-#include <assert.h>
-
 const int MIN_PREC = -1;
 
 Obj empty;

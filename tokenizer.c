@@ -1,12 +1,5 @@
 #include "cc.h"
 
-#include <string.h>
-#include <ctype.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-
 char *
 tk_kind_str(TokenKind kind)
 {

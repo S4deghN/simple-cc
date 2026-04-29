@@ -1,10 +1,5 @@
 #include "cc.h"
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-
 char *
 nd_kind_str(NodeKind kind)
 {

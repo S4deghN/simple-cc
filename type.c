@@ -1,9 +1,5 @@
 #include "cc.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 Type *ty_char = &(Type){ .kind = TY_CHAR, .size = 1};
 Type *ty_int = &(Type){ .kind = TY_INT, .size = 8};
 

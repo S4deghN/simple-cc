@@ -1,10 +1,5 @@
 #include "cc.h"
 
-#include <stdio.h>
-#include <assert.h>
-#include <stdlib.h>
-#include <stdarg.h>
-
 static FILE *output_file;
 
 static int depth;

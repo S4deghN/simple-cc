@@ -1,9 +1,15 @@
 #ifndef CC_H
 #define CC_H
 
-#include <stddef.h>
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 //
 // utils.c

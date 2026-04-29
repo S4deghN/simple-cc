@@ -1,11 +1,5 @@
 #include "cc.h"
 
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-#include <errno.h>
-
 static char *opt_o;
 static char *input_path;
 
