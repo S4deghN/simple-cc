@@ -8,6 +8,7 @@ typedef struct Scope Scope;
 struct Scope {
     Scope *next;
     Obj *objs;
+    Obj *last_obj;
 };
 
 Scope *const global = &(Scope){0};
@@ -27,12 +28,18 @@ static void
 leave_scope()
 {
     // Save objects of the leaving scope to fn_scope.
-    Obj *obj_start = scope->objs;
-    if (obj_start) {
-        Obj *obj_end = obj_start;
-        for (; obj_end->next; obj_end = obj_end->next);
-        obj_end->next = fn_scope->objs;
-        fn_scope->objs = obj_start;
+    // Before:
+    //      scope:    objs->->->last_obj->NULL
+    //      fn_scope: objs->->NULL
+    //
+    // After:
+    //      fn_scope: objs->->->last_obj->objs->->NULL
+    //                \________________/  \_____/
+    //                        V              V
+    //                      scope    previous fn_scope
+    if (scope->last_obj) {
+        scope->last_obj->next = fn_scope->objs;
+        fn_scope->objs = scope->objs;
     }
 
     scope = scope->next;
@@ -47,6 +54,9 @@ is_local_scope(Scope *sc)
 static void
 insert_scope_obj(Scope *sc, Obj *obj)
 {
+    // first insert
+    if (!sc->objs) sc->last_obj = obj;
+
     obj->next = sc->objs;
     sc->objs = obj;
 }
