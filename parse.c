@@ -212,15 +212,15 @@ new_sub(Node *left, Node *right, Token *tok) {
     add_type(left);
     add_type(right);
 
-    // int - ptr
-    if (right->ty->base) error_tok(tok, "Invalid int-pointer subtraction");
-
     // ptr - ptr
     if (left->ty->base && right->ty->base) {
         Node *node = new_binary(ND_SUB, left, right, tok);
         node->ty = ty_int;
         return new_binary(ND_DIV, node, new_implicit_num(tok, left->ty->base->size), tok);
     }
+
+    // int - ptr
+    if (right->ty->base) error_tok(tok, "Invalid int-pointer subtraction");
 
     // ptr - int
     if (left->ty->base) {
