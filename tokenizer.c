@@ -272,7 +272,10 @@ skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
     if (str[i] != '"') return i;
 
     size_t mark = i;
-    while (++i < len && str[i] != '"' && str[i] != '\n');
+    while (++i < len && str[i] != '"' && str[i] != '\n') {
+        if (str[i] == '\\') ++i; // Skip what ever is next in case it's a '"'
+                                 // i.e. Skip \" in string.
+    }
     if (str[i] != '"') error_at(file, i, line_nr, "Unclosed string litteral!");
 
     // NOTE: We need a -1 to get size of string between the '"' and a +1 for null termination!
@@ -286,7 +289,7 @@ skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
         if (str[j] == '\\') {
             ++j;
             data[data_len++] = read_escape_sequence(str, &j);
-            ++j;
+            continue;
         }
 
         data[data_len++] = str[j];
@@ -296,8 +299,7 @@ skip_string(File *file, size_t i, size_t line_nr, Buff *str_data)
     str_data->data = data;
     str_data->len = data_len;
 
-    assert(data_len <= i - mark);
-    // printf("data_len = %lu, i - mark = %lu\n", data_len, i - mark);
+    if (data_len > i - mark) error_at(file, mark, line_nr, "data_len(%d) <= (i - mark)(%d)", data_len, i - mark);
 
     return i + 1; // Consume '"'
 }
