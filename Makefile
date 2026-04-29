@@ -1,9 +1,7 @@
 objs := $(patsubst %.c,bin/%.o,$(wildcard *.c))
 headers := $(wildcard *.h)
 
-$(info objs = $(objs))
-$(info headers = $(headers))
-$(info )
+tests := $(patsubst test/%.c,bin/test/%,$(wildcard test/*.c))
 
 CFLAGS=-g -fno-common -Wall -Wextra -Wno-switch -Wno-unused-function -Werror=return-type
 
@@ -13,12 +11,18 @@ bin/compiler: $(objs)
 bin/%.o: %.c $(headers) | bin/
 	$(CC) $(CFLAGS) -c $< -o $@
 
+bin/test/%: test/%.c bin/compiler | bin/test
+	$(CC) -o- -E -P -C test/$*.c | ./bin/compiler -o bin/test/$*.s -
+	$(CC) bin/test/$*.s -xc test/assert -o $@
+
+.PHONY:
+test: $(tests)
+
 bin/:
 	mkdir -p bin
 
-test: bin/compiler
-	./test.sh
-	./test-driver.sh
+bin/test: bin/
+	mkdir -p bin/test
 
 clean:
 	rm -rf bin core.* a.out tmp*

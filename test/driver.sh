@@ -1,6 +1,6 @@
 #!/bin/sh
 
-compiler=./bin/compiler
+compiler="./bin/compiler"
 
 tmp=`mktemp -d /tmp/compiler-test-XXXXXX`
 trap 'rm -rf $tmp' INT TERM HUP EXIT

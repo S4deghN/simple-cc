@@ -165,7 +165,7 @@ gen_expr(Node *node)
 
     default:
         if (!node->rhs || !node->lhs) {
-            print_tree(node, "");
+            print_tree(stderr, node, "");
             assert("This node can not be handles as lhs, rhs expresion!");
         }
     }
@@ -331,7 +331,7 @@ emit_text(Obj *prog)
             }
         }
 
-        print_tree(fn->body, "  // ");
+        print_tree(output_file, fn->body, "  // ");
         gen_stmt(fn->body);
         assert(depth == 0);
 
