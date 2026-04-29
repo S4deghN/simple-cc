@@ -34,6 +34,13 @@ char *str_find_prev(char *str_start, char *cursor, char c);
 int align_to(int n, int align);
 File read_entire_file(const char *path);
 
+void *da_init(const size_t item_size);
+void *da_reserve(void *dynamic_array, const size_t count);
+void *da_append(void *dynamic_array, const void *item);
+void *da_append_many(void *dynamic_array, const void *items, const size_t count);
+size_t da_cap(const void *dynamic_array);
+size_t da_len(const void *dynamic_array);
+
 //
 // tokenize.c
 //

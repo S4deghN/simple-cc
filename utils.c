@@ -211,3 +211,82 @@ read_entire_file(const char *path)
 
     return (File) { .str = buf, .len = buflen, .path = (char*)path};
 }
+
+#define DA_INIT_CAP 256
+
+typedef struct {
+    size_t item_size;
+    size_t cap;
+    size_t len;
+    void *items;
+    // items memory
+} DaHeader;
+
+static inline DaHeader *
+da_get_header(const void *dynamic_array)
+{
+    return (DaHeader *)(dynamic_array - sizeof(DaHeader));
+}
+
+static void *
+__da_reserve(void *dynamic_array, const size_t count)
+{
+    DaHeader *da = da_get_header(dynamic_array);
+
+    if (da->cap == 0) {
+        da->cap = (DA_INIT_CAP > count) ? DA_INIT_CAP : count;
+    } else {
+        while (da->cap < da->len + count) da->cap = da->cap * 1.5;
+    }
+    da = realloc(da, sizeof(*da) + da->cap * da->item_size);
+    da->items = (void *)da + sizeof(DaHeader); // point to item 0.
+    return da;
+}
+
+void *
+da_init(const size_t item_size)
+{
+    DaHeader *da = calloc(1, sizeof(*da));
+    da->item_size = item_size;
+    da->items = (void *)da + sizeof(DaHeader); // point to non-existant item 0.
+    return da->items;
+}
+
+size_t
+da_cap(const void *dynamic_array)
+{
+    return da_get_header(dynamic_array)->cap;
+}
+
+size_t
+da_len(const void *dynamic_array)
+{
+    return da_get_header(dynamic_array)->len;
+}
+
+void *
+da_reserve(void *dynamic_array, const size_t count)
+{
+    DaHeader *da = __da_reserve(dynamic_array, count);
+    return da->items;
+}
+
+void *
+da_append(void *dynamic_array, const void *item)
+{
+    DaHeader *da = __da_reserve(dynamic_array, 1);
+
+    memcpy(da->items + (da->len * da->item_size), item, da->item_size);
+    da->len += 1;
+    return da->items;
+}
+
+void *
+da_append_many(void *dynamic_array, const void *items, const size_t count)
+{
+    DaHeader *da = __da_reserve(dynamic_array, count);
+
+    memcpy(da->items + (da->len * da->item_size), items, da->item_size * count);
+    da->len += count;
+    return da->items;
+}
