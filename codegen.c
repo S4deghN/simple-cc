@@ -89,7 +89,7 @@ gen_addr(Node *node)
     switch (node->kind) {
     case ND_VAR:
         if (node->obj->is_local) {
-            println("  lea\t\t%d(%%rbp), %%rax", node->obj->stack_offset);
+            println("  lea\t\t%d(%%rbp), %%rax", node->obj->offset);
         } else {
             Token *tok = node->obj->tok;
             println("  lea\t\t%.*s(%%rip), %%rax", tok->len, tok->str);
@@ -101,6 +101,10 @@ gen_addr(Node *node)
     case ND_COMMA:
         gen_expr(node->lhs);
         gen_addr(node->rhs);
+        break;
+    case ND_MEMBER:
+        gen_addr(node->lhs);
+        println("  add\t\t$%d, %%rax", node->member->offset);
         break;
     default:
         expect_node_many(node, 3, ND_VAR, ND_DEREF, ND_COMMA);
@@ -123,7 +127,7 @@ load(Type *ty)
         println("  mov\t\t(%%rax), %%rax");
         break;
     default:
-        error_tok(ty->id_name, "Size %d type is not supported!");
+        error_tok(ty->id_name, "Loading size %d type is not supported!", ty->size);
     }
 }
 
@@ -151,7 +155,7 @@ gen_expr(Node *node)
 {
     NodeKind kind = node->kind;
 
-    println("  .loc 1 %d", node->tok->line_nr);
+    // println("  .loc 1 %d", node->tok->line_nr);
 
     switch (kind) {
     case ND_NUM:
@@ -162,6 +166,7 @@ gen_expr(Node *node)
         println("  neg\t\t%%rax");
         return;
     case ND_VAR:
+    case ND_MEMBER:
         gen_addr(node);
         load(node->ty);
         return;
@@ -204,7 +209,7 @@ gen_expr(Node *node)
 
     default:
         if (!node->rhs || !node->lhs) {
-            print_tree(stderr, node, "");
+            print_tree(stderr, node, ">> ");
             assert("This node can not be handles as lhs, rhs expresion!");
         }
     }
@@ -252,7 +257,7 @@ gen_expr(Node *node)
 static void
 gen_stmt(Node *node)
 {
-    println("  .loc 1 %d", node->tok->line_nr);
+    // println("  .loc 1 %d", node->tok->line_nr);
 
     switch (node->kind) {
     case ND_FOR: {
@@ -317,7 +322,7 @@ assing_locals_offset(Obj *func)
     // NOTE: We expect that this list of locals is in stack order. i.e., last declared stack variable must be assigned the smallest (in magnitude) offset. (closest to the stack base)
     for (Obj *var = func->locals; var; var = var->next) {
         offset -= var->ty->size;
-        var->stack_offset = offset;
+        var->offset = offset;
     }
     func->stack_size = align_to(-offset, 16);
 }
@@ -359,6 +364,8 @@ emit_text(Obj *prog)
         println("  .text");
         println("%.*s:", name->len, name->str);
 
+        print_tree(output_file, fn->body, "  // ");
+
         // prolog
         println("  push\t\t%%rbp");
         println("  mov\t\t%%rsp, %%rbp");
@@ -368,13 +375,12 @@ emit_text(Obj *prog)
         int i = fn->parameters_count - 1;
         for (Obj *var = fn->parameters; var; var = var->next) {
             if (var->ty->size == 1) {
-                println("  mov\t\t%s, %d(%%rbp)", call_reg8[i--], var->stack_offset);
+                println("  mov\t\t%s, %d(%%rbp)", call_reg8[i--], var->offset);
             } else {
-                println("  mov\t\t%s, %d(%%rbp)", call_reg64[i--], var->stack_offset);
+                println("  mov\t\t%s, %d(%%rbp)", call_reg64[i--], var->offset);
             }
         }
 
-        print_tree(output_file, fn->body, "  // ");
         gen_stmt(fn->body);
         assert(depth == 0);
 

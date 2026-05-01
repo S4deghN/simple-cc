@@ -10,6 +10,7 @@ ty_kind_str(TypeKind kind)
         case TY_CHAR: return "CHAR";
         case TY_INT: return "INT";
         case TY_PTR: return "PTR";
+        case TY_STRUCT: return "STRUCT";
         case TY_FUNC: return "FUNC";
         case TY_ARRAY: return "ARRAY";
         default:
@@ -154,6 +155,9 @@ add_type(Node *node)
         return;
     case ND_COMMA:
         node->ty = node->rhs->ty;
+        return;
+    case ND_MEMBER:
+        node->ty = node->member->ty;
         return;
     case ND_ADDR:
         if (node->lhs->ty->kind == TY_ARRAY)

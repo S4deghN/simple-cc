@@ -29,6 +29,7 @@ nd_kind_str(NodeKind kind)
         case ND_ADDR:  return "ADDR";
         case ND_DEREF:  return "DEREF";
         case ND_FUNCALL:  return "FUNCALL";
+        case ND_MEMBER:  return "MEMBER";
         default: return "???";
     }
 }
@@ -246,7 +247,7 @@ run_cmd(char *argv[], File *file) {
     return 0;
 }
 
-#define DA_INIT_CAP 256
+#define DA_INIT_CAP 4
 
 typedef struct {
     size_t item_size;
@@ -270,7 +271,7 @@ __da_reserve(void *dynamic_array, const size_t count)
     if (da->cap == 0) {
         da->cap = (DA_INIT_CAP > count) ? DA_INIT_CAP : count;
     } else {
-        while (da->cap < da->len + count) da->cap = da->cap * 1.5;
+        while (da->cap < da->len + count) da->cap = da->cap * 2;
     }
     da = realloc(da, sizeof(*da) + da->cap * da->item_size);
     da->items = (void *)da + sizeof(DaHeader); // point to item 0.

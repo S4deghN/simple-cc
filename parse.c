@@ -3,48 +3,71 @@
 const int MIN_PREC = -1;
 
 // ---------------------------------------
-// --- Scope ---
+// --- Scope and Context ---
 // ---------------------------------------
+
+typedef enum {
+    SC_NESTED,
+    SC_GLOBAL,
+    SC_FUNC,
+    SC_STRUCT
+} ScopeKind;
 
 typedef struct Scope Scope;
 struct Scope {
+    ScopeKind kind;
     Scope *next;
     Obj *objs;
     Obj *last_obj;
 };
+Obj *nested_objs;
 
-Scope *const global = &(Scope){0};
+Scope *const global = &(Scope){ .kind = SC_GLOBAL };
 Scope *scope = global;
-
-Scope *fn_scope = &(Scope){0};
+Scope *named_scope = global;
 
 static void
-enter_scope()
+enter_scope(ScopeKind kind)
 {
+    if (kind != SC_NESTED) {
+        Scope *sc = calloc(1, sizeof(*sc));
+        sc->next = named_scope;
+        sc->kind = kind;
+        named_scope = sc;
+    }
+
     Scope *sc = calloc(1, sizeof(*sc));
     sc->next = scope;
+    sc->kind = kind;
     scope = sc;
 }
 
-static void
+// Returns the obj list of the leaving named scope
+static Obj *
 leave_scope()
 {
-    // Save objects of the leaving scope to fn_scope.
+    // Save objects of the leaving scope to named scope.
     // Before:
-    //      scope:    objs->->->last_obj->NULL
-    //      fn_scope: objs->->NULL
+    //      scope:       objs->->->last_obj->NULL
+    //      named_scope: objs->->NULL
     //
     // After:
-    //      fn_scope: objs->->->last_obj->objs->->NULL
-    //                \________________/  \_____/
-    //                        V              V
-    //                      scope    previous fn_scope
+    //      named_scope: objs->->->last_obj->objs->->NULL
+    //                   \________________/  \_____/
+    //                           V              V
+    //                         scope       named_scope
     if (scope->last_obj) {
-        scope->last_obj->next = fn_scope->objs;
-        fn_scope->objs = scope->objs;
+        scope->last_obj->next = named_scope->objs;
+        named_scope->objs = scope->objs;
     }
+    Obj *objs = named_scope->objs;
+
+
+    if (scope->kind != SC_NESTED) named_scope = named_scope->next;
 
     scope = scope->next;
+
+    return objs;
 }
 
 static bool
@@ -273,7 +296,11 @@ match_str(Token *tok, char *name)
 static bool
 is_typename(Token *tok)
 {
-    return match_str(tok, "char") || match_str(tok, "int");
+    return tok->kind == TK_KEYWORD && (
+        match_str(tok, "struct") ||
+        match_str(tok, "char") ||
+        match_str(tok, "int")
+        );
 }
 
 static bool
@@ -486,15 +513,33 @@ parse_funcall(Token **tok, Token *mark)
     return node;
 }
 
+static Obj *
+find_struct_member(Token *tok, Type *ty)
+{
+    if (ty->kind != TY_STRUCT) error_tok(tok, "Trying to member access a non-struct type!");
+    for (Obj *m = ty->members; m; m = m->next) {
+        if (m->tok->len == tok->len && strncmp(m->tok->str, tok->str, tok->len) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
 static Node *
 parse_right_unary(Token **tok, Node *left) {
     Token *mark = *tok;
-    if (mark->kind == '[') {
-        *tok = mark->next;
+    if (skip(tok, '[')) {
         Node *right = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ']');
         left = new_unary_node(ND_DEREF, new_add_node(left, right, mark), mark);
+    } else if (skip(tok, '.')) {
+        add_type(left);
+        Obj *member = find_struct_member(expect_skip(tok, TK_ID), left->ty);
+        if (!member) error_tok(left->tok, "Struct has no member called '%.*s'!", mark->next->len, mark->next->str);
+        left = new_unary_node(ND_MEMBER, left, mark);
+        left->member = member;
     }
+
     return left;
 }
 
@@ -561,7 +606,7 @@ parse_statement(Token **tok)
 
     // compound statement { ... }
     if (skip(tok, '{')) {
-        enter_scope();
+        enter_scope(SC_NESTED);
         Node head = {0};
         node = &head;
         while (!skip(tok, '}')) {
@@ -638,12 +683,47 @@ parse_statement(Token **tok)
 }
 
 static Type *
+parse_struct_base_type(Token **tok)
+{
+    expect_skip(tok, '{');
+
+    Type *ty = calloc(1, sizeof(*ty));
+    ty->kind = TY_STRUCT;
+
+    enter_scope(SC_STRUCT);
+
+    while (!skip(tok, '}')) {
+        parse_declaration(tok);
+    }
+
+    ty->members = leave_scope();
+
+    // Order of the members is stack like, but we expect the offset of struct members to grow.
+    // @TODO: Use dynamic arrays for scope objects.
+    size_t size = 0;
+    for (Obj *mem = ty->members; mem; mem = mem->next) {
+        size += mem->ty->size;
+    }
+    ty->size = size;
+
+    for (Obj *mem = ty->members; mem; mem = mem->next) {
+        size -= mem->ty->size;
+        mem->offset = size;
+    }
+
+
+    return ty;
+}
+
+static Type *
 parse_base_type(Token **tok)
 {
     Token *name = expect_skip(tok, TK_KEYWORD); // @Temporary, must expect typename.
     Type *ty;
 
-    if (match_str(name, "char")) {
+    if (match_str(name, "struct")) {
+        ty = parse_struct_base_type(tok);
+    } else if (match_str(name, "char")) {
         ty = copy_type(ty_char);
     } else if (match_str(name, "int")) {
         ty = copy_type(ty_int);
@@ -726,8 +806,7 @@ parse_function_body(Token **tok, Obj *obj)
 {
     Token *mark = expect_skip(tok, '{');
 
-    fn_scope->objs = NULL;
-    enter_scope();
+    enter_scope(SC_FUNC);
 
     // Allocate parameters in local scope.
     for (Type *param = obj->ty->params; param; param = param->next) {
@@ -746,8 +825,7 @@ parse_function_body(Token **tok, Obj *obj)
     body->body = head.next;
     obj->body = body;
 
-    leave_scope();
-    obj->locals = fn_scope->objs;
+    obj->locals = leave_scope();
 }
 
 //

@@ -109,6 +109,7 @@ typedef enum {
     ND_NE     = TK_NE,
 
     // Unary operators
+    ND_MEMBER,
     ND_NEG,
     ND_ADDR,
     ND_DEREF,
@@ -145,8 +146,8 @@ struct Obj {
     // Function body or global assignment
     Node *body;
 
-    // Local variable
-    int stack_offset;
+    // Local variable and struct member
+    int offset;
 
     // Global variable
     char *init_data;
@@ -180,6 +181,9 @@ struct Node {
 
     // Variable or function call
     Obj *obj;
+
+    // Member access
+    Obj *member;
 };
 
 Obj *parse(Token *tok);
@@ -193,6 +197,7 @@ typedef enum {
     TY_CHAR,
     TY_INT,
     TY_PTR,
+    TY_STRUCT,
     TY_FUNC,
     TY_ARRAY,
 } TypeKind;
@@ -213,6 +218,9 @@ struct Type {
 
     // String
     char *str_data;
+
+    // Members
+    Obj *members;
 
     // Function
     Type *ret_ty;
