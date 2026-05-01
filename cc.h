@@ -179,8 +179,6 @@ struct Node {
 };
 
 Obj *parse(Token *tok);
-void expect_node(Node *node, NodeKind kind);
-void expect_node_many(Node *node, int n, ...);
 void print_tree(FILE *out, const Node *root, char *prefix);
 
 //

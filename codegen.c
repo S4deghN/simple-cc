@@ -9,6 +9,40 @@ static char *call_reg64[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 
 static Obj *current_fn;
 
+//
+// Node handling utils
+//
+
+static void
+expect_node(Node *node, NodeKind kind)
+{
+    if (node->kind != kind)
+        error_tok(node->tok, "Expected '%s', got '%s'", nd_kind_str(kind), nd_kind_str(node->kind));
+}
+
+static void
+expect_node_many(Node *node, int n, ...)
+{
+    va_list ap;
+    va_start(ap, n);
+    for (int i = 0; i < n; ++i) {
+        if (node->kind == va_arg(ap, NodeKind)) {
+            va_end(ap);
+            return;
+        }
+    }
+
+    diag_tok(node->tok, "Expected ");
+
+    va_start(ap, n);
+    fprintf(stderr, "'%s'", nd_kind_str(va_arg(ap, NodeKind)));
+    for (int i = 1; i < n; ++i) {
+        fprintf(stderr, " or '%s'", nd_kind_str(va_arg(ap, NodeKind)));
+    }
+    fprintf(stderr, ", got '%s'\n", nd_kind_str(node->kind));
+    error("");
+}
+
 static void
 println(char *fmt, ...)
 {
