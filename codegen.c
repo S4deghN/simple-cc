@@ -147,6 +147,8 @@ gen_expr(Node *node)
 {
     NodeKind kind = node->kind;
 
+    println("  .loc 1 %d", node->tok->line_nr);
+
     switch (kind) {
     case ND_NUM:
         println("  mov\t\t$%d, %%rax", node->val);
@@ -242,6 +244,7 @@ static void
 gen_stmt(Node *node)
 {
     int uniq = counter();
+    println("  .loc 1 %d", node->tok->line_nr);
 
     switch (node->kind) {
     case ND_FOR:
@@ -377,6 +380,7 @@ void
 codegen(Obj *prog, FILE* out)
 {
     output_file = out;
+    if (prog) println(".file 1 \"%s\"\n", prog->tok->file->path);
     emit_data(prog);
     emit_text(prog);
 }
