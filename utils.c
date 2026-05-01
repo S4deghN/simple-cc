@@ -212,6 +212,39 @@ read_entire_file(const char *path)
     return (File) { .str = buf, .len = buflen, .path = (char*)path};
 }
 
+int
+run_cmd(char *argv[], File *file) {
+    char buff[4096];
+    char *p = buff;
+    for (int i = 0; argv[i] != NULL; ++i) {
+        p = stpcpy(p, argv[i]);
+        p = stpcpy(p, " ");
+    }
+
+    int n;
+    FILE *f = popen(buff, "r");
+    if (!f) {
+        perror("popen: ");
+        return -1;
+    }
+
+    char *da = da_init(sizeof(*da));
+
+    while((n = fread(buff, 1, sizeof(buff), f))) {
+        da = da_append_many(da, buff, n);
+    }
+
+    file->str = da;
+    file->len = da_len(da);
+
+    int err = pclose(f);
+    if (err == -1) {
+        perror("pclose: ");
+    }
+
+    return 0;
+}
+
 #define DA_INIT_CAP 256
 
 typedef struct {

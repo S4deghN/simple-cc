@@ -33,6 +33,7 @@ char *str_find_next(char *str_end, char *cursor, char c);
 char *str_find_prev(char *str_start, char *cursor, char c);
 int align_to(int n, int align);
 File read_entire_file(const char *path);
+int run_cmd(char *argv[], File *file);
 
 void *da_init(const size_t item_size);
 void *da_reserve(void *dynamic_array, const size_t count);

@@ -1,6 +1,7 @@
 #include "cc.h"
 
 static char *opt_o;
+static bool opt_E;
 static char *input_path;
 
 static void
@@ -29,6 +30,11 @@ parse_args(int argc, char **argv)
             continue;
         }
 
+        if (!strncmp(argv[i], "-E", 2)) {
+            opt_E = true;
+            continue;
+        }
+
         if (argv[i][0] == '-' && argv[i][1] != '\0')
             error("unknown argument: %s", argv[i]);
 
@@ -51,17 +57,32 @@ open_file(char *path)
     return out;
 }
 
+void
+preproc(char *input_path, File *file)
+{
+    assert(run_cmd((char*[]){"cc", "-E", "-P", "-C", input_path, NULL}, file) == 0);
+    file->path = input_path;
+}
+
 int main(int argc, char *argv[]) {
 
     parse_args(argc, argv);
 
-    File file = read_entire_file(input_path);
+    FILE *out = open_file(opt_o);
+
+    // File file = read_entire_file(input_path);
+    File file;
+
+    preproc(input_path, &file);
+    if (opt_E) {
+        fwrite(file.str, 1, file.len, out);
+        exit(0);
+    }
 
     Token *tk = tokenize(&file);
 
     Obj *prog = parse(tk);
 
-    FILE *out = open_file(opt_o);
     codegen(prog, out);
 
     return 0;

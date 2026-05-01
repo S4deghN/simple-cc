@@ -12,7 +12,7 @@ bin/%.o: %.c $(headers) | bin/
 	$(CC) $(CFLAGS) -c $< -o $@
 
 bin/test/%: test/%.c bin/compiler | bin/test
-	$(CC) -o- -E -P -C test/$*.c | ./bin/compiler -o bin/test/$*.s -
+	./bin/compiler -o bin/test/$*.s test/$*.c
 	$(CC) bin/test/$*.s -xc test/assert -o $@
 
 .PHONY:
