@@ -16,6 +16,7 @@ nd_kind_str(NodeKind kind)
         case ND_GTE: return "GTE";
         case ND_EQ:  return "EQ";
         case ND_NE:  return "NE";
+        case ND_COMMA:  return "COMMA";
         case ND_VAR: return "VAR";
         case ND_ASSIGN: return "ASSIGN";
         case ND_RETURN: return "RETURN";

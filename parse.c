@@ -442,6 +442,31 @@ parse_leaf(Token **tok)
     abort();
 }
 
+static int
+get_binary_precedence(TokenKind kind)
+{
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
+    switch (kind) {
+    case '*': case '/':
+        return 100;
+    case '+': case '-':
+        return 50;
+    case '<': case '>':
+    case TK_GTE: case TK_LTE:
+        return 25;
+    case TK_EQ: case TK_NE:
+        return 12;
+    case '=':
+        return 6;
+    case ',':
+        return 3;
+    default:
+        return MIN_PREC-1;
+    }
+#pragma GCC diagnostic pop
+}
+
 // funcall = (expr ("," expr)*)?
 static Node *
 parse_funcall(Token **tok, Token *mark)
@@ -452,7 +477,8 @@ parse_funcall(Token **tok, Token *mark)
     Node *args = &head;
     for (int i = 0; !skip(tok, ')'); ++i) {
         if (i) expect_skip(tok, ',');
-        args = args->next = parse_expr(tok, MIN_PREC);
+        // We want ',' to be a stop point when parsing function arguments!
+        args = args->next = parse_expr(tok, get_binary_precedence(','));
         add_type(args);
     }
     node->args = head.next;
@@ -472,36 +498,13 @@ parse_right_unary(Token **tok, Node *left) {
     return left;
 }
 
-static int
-get_binary_precedence(Token *tok)
-{
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch"
-    switch (tok->kind) {
-    case '*': case '/':
-        return 100;
-    case '+': case '-':
-        return 50;
-    case '<': case '>':
-    case TK_GTE: case TK_LTE:
-        return 25;
-    case TK_EQ: case TK_NE:
-        return 12;
-    case '=':
-        return 6;
-    default:
-        return MIN_PREC-1;
-    }
-#pragma GCC diagnostic pop
-}
-
 // right leaning tree builder
 static Node *
 parse_increasing_recedence(Token **tok, Node *left, int min_prec)
 {
     Token *mark = *tok;
 
-    int next_prec = get_binary_precedence(mark); // Returns lowest precedence on any non binary operation token so that we stop.
+    int next_prec = get_binary_precedence(mark->kind); // Returns lowest precedence on any non binary operation token so that we stop.
 
     // special case for '=' we need a right leaning tree in case of consecutive assignments
     if (next_prec + (mark->kind == '=') <= min_prec) return parse_right_unary(tok, left);
@@ -713,7 +716,7 @@ parse_decl_assignment(Token **tok, Obj *obj)
     Token *mark = expect_skip(tok, '=');
 
     Node *left = new_obj_node(obj->tok);
-    Node *right = parse_expr(tok, MIN_PREC);
+    Node *right = parse_expr(tok, get_binary_precedence(',')); // Expect comman as a separator not an operator.
     Node *binary = new_binary_node(ND_ASSIGN, left, right, mark);
     return new_unary_node(ND_EXPR_STMT, binary, *tok);
 }

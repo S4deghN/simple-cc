@@ -97,6 +97,7 @@ typedef enum {
     // Oreder must be same as TokeKind's declaration, otherwise enum values may colide!
     ND_MUL    = '*',
     ND_ADD    = '+',
+    ND_COMMA  = ',',
     ND_SUB    = '-',
     ND_DIV    = '/',
     ND_LT     = '<',

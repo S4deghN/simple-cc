@@ -98,8 +98,12 @@ gen_addr(Node *node)
     case ND_DEREF:
         gen_expr(node->lhs);
         break;
+    case ND_COMMA:
+        gen_expr(node->lhs);
+        gen_addr(node->rhs);
+        break;
     default:
-        expect_node_many(node, 2, ND_VAR, ND_DEREF);
+        expect_node_many(node, 3, ND_VAR, ND_DEREF, ND_COMMA);
     }
 }
 
@@ -176,6 +180,10 @@ gen_expr(Node *node)
         gen_expr(node->rhs);
         store(node->ty);
         return;
+    case ND_COMMA:
+        gen_expr(node->lhs);
+        gen_expr(node->rhs);
+        return;
     case ND_FUNCALL:
         int nargs = 0;
         for (Node *arg = node->args; arg; arg = arg->next) {
@@ -236,7 +244,8 @@ gen_expr(Node *node)
         println("  movzb\t\t%%al, %%rax");
         return;
     default:
-        error("codege: invalid expression");
+        print_tree(stderr, node, "  // ");
+        error_tok(node->tok, "codege: invalid expression");
     }
 }
 
