@@ -53,10 +53,10 @@ typedef enum {
     TK_KEYWORD,
     TK_STR,
     TK_NUM,
-    TK_GREQ,
-    TK_LTEQ,
+    TK_GTE,
+    TK_LTE,
     TK_EQ,
-    TK_NOEQ,
+    TK_NE,
 } TokenKind;
 char *tk_kind_str(TokenKind kind);
 
@@ -86,31 +86,34 @@ void error(char *fmt, ...);
 //
 
 typedef enum {
-    // expression unists/ primary expressions
+    // Primary expressions (Units)
     ND_NUM,
     ND_VAR,
     ND_FUNCALL,
 
-    // binary operators
-    ND_ASSIGN,
-    ND_ADD,
-    ND_SUB,
-    ND_MUL,
-    ND_DIV,
-    ND_NEG,
-    ND_EQ,
-    ND_NE,
-    ND_GT,
-    ND_GTE,
-    ND_LT,
-    ND_LTE,
+    // Binary operators
+    // For easier expression parsing we are assigning the same TokenKind value
+    // to these NodeKinds for direct one to one translation when creating new nodes.
+    // Oreder must be same as TokeKind's declaration, otherwise enum values may colide!
+    ND_MUL    = '*',
+    ND_ADD    = '+',
+    ND_SUB    = '-',
+    ND_DIV    = '/',
+    ND_LT     = '<',
+    ND_ASSIGN = '=',
+    ND_GT     = '>',
+    ND_GTE    = TK_GTE,
+    ND_LTE    = TK_LTE,
+    ND_EQ     = TK_EQ,
+    ND_NE     = TK_NE,
 
-    // unary operators
+    // Unary operators
+    ND_NEG,
     ND_ADDR,
     ND_DEREF,
     ND_RETURN,
 
-    // code blocks
+    // Code blocks
     ND_BLOCK,      // Used in case a language constructs requires a list of operations to be executed in sequence like assignment in declaration or body of a function or the program itself. The `body` field is used as linked list of those operations.
     ND_IF,
     ND_FOR,        // "for" or "while"

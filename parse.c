@@ -371,62 +371,11 @@ expect_skip_kw(Token **tok, char *name)
 // --- Parsing ---
 // ---------------------------------------
 
-static int
-get_binary_precedence(Token *tok)
-{
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch"
-    switch (tok->kind) {
-    case '*':
-    case '/':
-        return 100;
-    case '+':
-    case '-':
-        return 50;
-    case '<':
-    case '>':
-    case TK_GREQ:
-    case TK_LTEQ:
-        return 25;
-    case TK_EQ:
-    case TK_NOEQ:
-        return 12;
-    case '=':
-        return 6;
-    default:
-        return MIN_PREC-1;
-    }
-#pragma GCC diagnostic pop
-}
-
-NodeKind
-tok_to_binary_op(Token *tok)
-{
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch"
-    switch (tok->kind) {
-    case '+':     return ND_ADD;
-    case '-':     return ND_SUB;
-    case '*':     return ND_MUL;
-    case '/':     return ND_DIV;
-    case '<':     return ND_LT;
-    case '>':     return ND_GT;
-    case '=':     return ND_ASSIGN;
-    case TK_GREQ: return ND_GTE;
-    case TK_LTEQ: return ND_LTE;
-    case TK_EQ:   return ND_EQ;
-    case TK_NOEQ: return ND_NE;
-    default:
-        error_tok(tok, "Not a binary operator");
-        return -1;
-    }
-#pragma GCC diagnostic pop
-}
-
-static Node *parse_declaration(Token **tok);
+static Node *parse_leaf(Token **tok);
 static Node *parse_expr(Token **tok, int min_prec);
 static Node *parse_funcall(Token **tok, Token *mark);
 static Node *parse_statement(Token **tok);
+static Node *parse_declaration(Token **tok);
 
 static Node *
 parse_leaf(Token **tok)
@@ -523,6 +472,29 @@ parse_right_unary(Token **tok, Node *left) {
     return left;
 }
 
+static int
+get_binary_precedence(Token *tok)
+{
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
+    switch (tok->kind) {
+    case '*': case '/':
+        return 100;
+    case '+': case '-':
+        return 50;
+    case '<': case '>':
+    case TK_GTE: case TK_LTE:
+        return 25;
+    case TK_EQ: case TK_NE:
+        return 12;
+    case '=':
+        return 6;
+    default:
+        return MIN_PREC-1;
+    }
+#pragma GCC diagnostic pop
+}
+
 // right leaning tree builder
 static Node *
 parse_increasing_recedence(Token **tok, Node *left, int min_prec)
@@ -537,7 +509,7 @@ parse_increasing_recedence(Token **tok, Node *left, int min_prec)
     (*tok) = (*tok)->next;
 
     Node *right = parse_expr(tok, next_prec);
-    return new_binary_with_checks_node(tok_to_binary_op(mark), left, right, mark);
+    return new_binary_with_checks_node((NodeKind)mark->kind, left, right, mark);
 }
 
 // left leaning tree builder

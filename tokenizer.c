@@ -10,10 +10,10 @@ tk_kind_str(TokenKind kind)
         case TK_KEYWORD: return "KEYWORD";
         case TK_STR:     return "STR";
         case TK_NUM:     return "NUM";
-        case TK_GREQ:    return "GREQ";
-        case TK_LTEQ:    return "LTEQ";
+        case TK_GTE:     return "GREQ";
+        case TK_LTE:     return "LTEQ";
         case TK_EQ:      return "EQ";
-        case TK_NOEQ:    return "NOEQ";
+        case TK_NE:      return "NOEQ";
         default:
             if (ispunct(kind)) {
                 sprintf(ret_buff, "PUNCT(%c)", kind);
@@ -209,10 +209,10 @@ skip_rel(File *file, size_t i, size_t line_nr, TokenKind *kind)
     if (i+1 >= len || str[i+1] != '=') return i;
 
     switch (str[i]) {
-    case '=': *kind = TK_EQ;   i += 2; break;
-    case '!': *kind = TK_NOEQ; i += 2; break;
-    case '<': *kind = TK_LTEQ; i += 2; break;
-    case '>': *kind = TK_GREQ; i += 2; break;
+    case '=': *kind = TK_EQ;  i += 2; break;
+    case '!': *kind = TK_NE;  i += 2; break;
+    case '<': *kind = TK_LTE; i += 2; break;
+    case '>': *kind = TK_GTE; i += 2; break;
     }
 
     return i;
