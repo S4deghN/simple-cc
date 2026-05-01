@@ -33,7 +33,7 @@ static void
 __diag_at(char *str, size_t len, size_t offset, size_t line_nr, char *file_path, char *fmt, va_list ap)
 {
     char *cursor = str + offset;
-    char *line_start = str_find_prev(str,       cursor, '\n');
+    char *line_start = str_find_prev(str, cursor - (*cursor == '\n'), '\n');
     if (line_start != str) line_start += 1;
     char *line_end   = str_find_next(str + len, cursor, '\n');
     int column = cursor - line_start;
@@ -51,6 +51,7 @@ __diag_tok(Token *tok, char *fmt, va_list ap)
     char  *str    = tok->file->str;
     size_t len    = tok->file->len;
     size_t offset = tok->str - str;
+    if (tok->kind == TK_EOF) offset -= 1;
     __diag_at(str, len, offset, tok->line_nr, tok->file->path, fmt, ap);
 }
 

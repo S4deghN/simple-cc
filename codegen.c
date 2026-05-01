@@ -243,11 +243,11 @@ gen_expr(Node *node)
 static void
 gen_stmt(Node *node)
 {
-    int uniq = counter();
     println("  .loc 1 %d", node->tok->line_nr);
 
     switch (node->kind) {
-    case ND_FOR:
+    case ND_FOR: {
+        int uniq = counter();
         if (node->init) gen_stmt(node->init);
         println(".L.for_begin.%d:", uniq);
         if (node->cond) {
@@ -259,8 +259,9 @@ gen_stmt(Node *node)
         if (node->iter) gen_expr(node->iter);
         println("  jmp\t\t.L.for_begin.%d", uniq);
         println(".L.for_end.%d:", uniq);
-        break;
-    case ND_DO:
+    } break;
+    case ND_DO: {
+        int uniq = counter();
         println(".L.do_begin.%d:", uniq);
         gen_stmt(node->then);
         gen_expr(node->cond);
@@ -268,8 +269,9 @@ gen_stmt(Node *node)
         println("  je \t\t.L.do_end.%d", uniq);
         println("  jmp\t\t.L.do_begin.%d", uniq);
         println(".L.do_end.%d:", uniq);
-        break;
-    case ND_IF:
+    } break;
+    case ND_IF: {
+        int uniq = counter();
         gen_expr(node->cond);
         println("  cmp\t\t$0, %%rax");
         println("  je \t\t.L.if_end.%d", uniq);
@@ -280,7 +282,7 @@ gen_stmt(Node *node)
             gen_stmt(node->els);
             println(".L.endelse.%d:", uniq);
         }
-        break;
+    } break;
     case ND_BLOCK:
         for (Node *n = node->body; n; n = n->next) {
             gen_stmt(n);

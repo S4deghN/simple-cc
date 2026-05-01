@@ -11,7 +11,7 @@ usage(int status, char *prog_name)
     exit(status);
 }
 
-static void 
+static void
 parse_args(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -79,9 +79,9 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    Token *tk = tokenize(&file);
+    Token *tok = tokenize(&file);
 
-    Obj *prog = parse(tk);
+    Obj *prog = parse(tok);
 
     codegen(prog, out);
 
