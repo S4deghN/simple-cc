@@ -46,16 +46,16 @@ leave_scope()
 }
 
 static bool
-is_local_scope(Scope *sc)
+is_global_scope(Scope *sc)
 {
-    return sc->next != NULL;
+    return sc->next == NULL;
 }
 
 static void
 insert_scope_obj(Scope *sc, Obj *obj)
 {
-    // first insert
-    if (!sc->objs) sc->last_obj = obj;
+    bool is_first_insert = !sc->objs;
+    if (is_first_insert) sc->last_obj = obj;
 
     obj->next = sc->objs;
     sc->objs = obj;
@@ -81,6 +81,56 @@ find_obj(Token *tok)
         if (obj) return obj;
     }
     return NULL;
+}
+
+// Creates a new object and insert it to the current socpe if it doens't exist.
+static Obj *
+new_obj(Type *ty, Scope *scope)
+{
+    Obj *obj;
+    bool prototype_existed = false;
+
+    if ((obj = find_obj_this_scope(ty->id_name, scope))) {
+        if (obj->is_function && !obj->body && func_type_match(ty, obj->ty)) {
+            // Use the found obj
+            prototype_existed = true;
+        } else if (obj->tok->kind == TK_STR) {
+            return obj;
+        } else {
+            error_tok(ty->id_name, "Redefinition of identifier");
+        }
+    } else {
+        obj = calloc(1, sizeof(*obj));
+    }
+
+    obj->tok = ty->id_name;
+    obj->ty = ty;
+    if (ty->kind == TY_FUNC) {
+        obj->is_function = true;
+        obj->parameters_count = ty->param_count;
+    }
+
+    obj->is_local = !is_global_scope(scope);
+
+    if (!prototype_existed) { // We already had it on the list so don't make a circle!
+        insert_scope_obj(scope, obj);
+    }
+
+    return obj;
+}
+
+static Obj *
+new_string_obj(Token *tok)
+{
+    assert(tok->kind == TK_STR);
+
+    Type *ty = array_of(ty_char, tok->str_data.len); // +1 for null.
+    ty->id_name = tok;
+
+    Obj *obj = new_obj(ty, global); // Always global
+    obj->init_data = tok->str_data.data;
+
+    return obj;
 }
 
 static Node *
@@ -126,55 +176,6 @@ new_implicit_num(Token *tok, int val)
     return node;
 }
 
-static Obj *
-new_obj(Type *ty, Scope *scope)
-{
-    Obj *obj;
-    bool prototype_existed = false;
-
-    if ((obj = find_obj_this_scope(ty->id_name, scope))) {
-        if (obj->is_function && !obj->body && func_type_match(ty, obj->ty)) {
-            // Use the found obj
-            prototype_existed = true;
-        } else if (obj->tok->kind == TK_STR) {
-            return obj;
-        } else {
-            error_tok(ty->id_name, "Redefinition of identifier");
-        }
-    } else {
-        obj = calloc(1, sizeof(*obj));
-    }
-
-    obj->tok = ty->id_name;
-    obj->ty = ty;
-    if (ty->kind == TY_FUNC) {
-        obj->is_function = true;
-        obj->parameters_count = ty->param_count;
-    }
-
-    obj->is_local = is_local_scope(scope);
-
-    if (!prototype_existed) { // We already had it on the list so don't make a circle!
-        insert_scope_obj(scope, obj);
-    }
-
-    return obj;
-}
-
-// Always global
-Obj *
-new_string_obj(Token *tok)
-{
-    assert(tok->kind == TK_STR);
-
-    Type *ty = array_of(ty_char, tok->str_data.len); // +1 for null.
-    ty->id_name = tok;
-
-    Obj *obj = new_obj(ty, global);
-    obj->init_data = tok->str_data.data;
-
-    return obj;
-}
 static Node *
 obj_node(Token *tok)
 {
@@ -581,9 +582,11 @@ parse_base_type(Token **tok)
 }
 
 static Type *
-parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
+parse_id_declarator(Token **tok, const Type *base_ty)
 {
     // Be aware that right now we are using this function recursively to parse a function declerator and also its parameters. So one could pass a function declarator as a function declaration as parameter which is not defined in C and we do not support it either but for the sake of simplicity we do not care right now.
+    Type *ty = copy_type(base_ty);
+
     while (skip(tok, '*')) ty = pointer_to(ty);
 
     if (skip(tok, '(')) error_tok(*tok, "Function pointer is not supported!");
@@ -633,33 +636,14 @@ parse_id_declarator(Token **tok, Type *ty) // `ty` will be modified.
 }
 
 static Node *
-parse_var_declaration(Token **tok, Type *base_ty)
+parse_decl_assignment(Token **tok, Obj *obj)
 {
-    Token *mark;
+    Token *mark = expect_skip(tok, '=');
 
-    Node head = {0};
-    Node *body = &head;
-    for (int i = 0; !skip(tok, ';'); ++i) {
-        if (i) expect_skip(tok, ',');
-
-        Type *ty = copy_type(base_ty);
-        ty = parse_id_declarator(tok, ty);
-        // if (ty->kind == TY_FUNC) error_tok(ty->id_name, "Nested function declaration is not supported!");
-
-        Obj *obj = new_obj(ty, scope); // TODO: Refactor and use in global scope too.
-        obj->is_local = 1;
-
-        mark = *tok;
-        if (skip(tok, '=')) {
-            Node *left = obj_node(obj->tok);
-            Node *right = parse_expr(tok, MIN_PREC);
-            Node *binary = new_binary(ND_ASSIGN, left, right, mark);
-            body = body->next = new_unary(ND_EXPR_STMT, binary, *tok);
-        }
-    } // skiped ';'
-    Node *node = new_node(ND_BLOCK, mark); // NOTE: this node's tok is incorrect, but I don't care about tok for a ND_BLOCK.
-    node->body = head.next;
-    return node;
+    Node *left = obj_node(obj->tok);
+    Node *right = parse_expr(tok, MIN_PREC);
+    Node *binary = new_binary(ND_ASSIGN, left, right, mark);
+    return new_unary(ND_EXPR_STMT, binary, *tok);
 }
 
 static Node *
@@ -676,6 +660,8 @@ parse_expr_statement(Token **tok)
     return node;
 }
 
+static Node *parse_declaration(Token **tok);
+
 static Node *
 parse_statement(Token **tok)
 {
@@ -684,8 +670,9 @@ parse_statement(Token **tok)
 
     // declaration | defenition
     if (is_typename(*tok)) {
-        Type *base_ty = parse_base_type(tok);
-        return parse_var_declaration(tok, base_ty);
+        node = new_node(ND_BLOCK, mark);
+        node->body = parse_declaration(tok);
+        return node;
     }
 
     // compound statement { ... }
@@ -769,6 +756,8 @@ parse_statement(Token **tok)
 static void
 parse_function_body(Token **tok, Obj *obj)
 {
+    Token *mark = expect_skip(tok, '{');
+
     fn_scope->objs = NULL;
     enter_scope();
 
@@ -785,7 +774,7 @@ parse_function_body(Token **tok, Obj *obj)
         add_type(body);
         if ((*tok)->kind == TK_EOF) error_tok(*tok, "Expected '}' at end of function defenition!");
     }
-    body = new_node(ND_BLOCK, obj->tok);
+    body = new_node(ND_BLOCK, mark);
     body->body = head.next;
     obj->body = body;
 
@@ -794,43 +783,55 @@ parse_function_body(Token **tok, Obj *obj)
 }
 
 //
-// Generates Objs and puts them in the globals list
+// Creates Objects and puts them in the current scope
 // They may or may not contain as their body a code block (ND_BLOCK).
+// Returns a node-body in case of assignment to local declarations.
 //
-static void
-parse_global(Token **tok)
+static Node *
+parse_declaration(Token **tok)
 {
-    Type *ty = parse_base_type(tok);
+    Type *base_ty = parse_base_type(tok);
 
     // e.g. int;
-    if (skip(tok, ';')) return;
+    if (skip(tok, ';')) return NULL;
+
+    Node head = {0};
+    Node *body = &head; // For assignments in local declarations.
 
     for (int i = 0; !skip(tok, ';'); ++i) {
         if (i) expect_skip(tok, ',');
 
-        ty = parse_id_declarator(tok, ty);
+        Type *ty = parse_id_declarator(tok, base_ty);
 
-        Obj *obj = new_obj(ty, global); // Take the return value in case we want to set a body for it down this path.
+        Obj *obj = new_obj(ty, scope);
 
-        if (i == 0 && obj->is_function && skip(tok, '{')) {
-            parse_function_body(tok, obj); // Will assign body of the object!
-            return;
+        if (i == 0 && obj->is_function && (*tok)->kind == '{') {
+            if (!is_global_scope(scope)) error_tok(*tok, "Nested function definition is not supporeted!");
+            parse_function_body(tok, obj);
+            // We don't need to return any node, since function declaration is
+            // only supported in the global scope, and nodes of a function body
+            // are assigned to its object.
+            return NULL;
         }
 
-        if (!obj->is_function && skip(tok, '=')) {
-            assert(0 && "Not supported yet!");
-            // parse_decl_assignmen();
+        if (!obj->is_function && (*tok)->kind == '=') {
+            if (is_global_scope(scope)) {
+                error_tok(*tok, "Global initialization of variables is not supported!");
+            } else {
+                body = body->next = parse_decl_assignment(tok, obj);
+            }
             continue;
         }
     }
 
+    return head.next;
 }
 
 Obj *
 parse(Token *tok)
 {
     while (tok->kind != TK_EOF) {
-        parse_global(&tok);
+        parse_declaration(&tok);
     }
 
     return global->objs;

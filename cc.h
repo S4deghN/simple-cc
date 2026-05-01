@@ -222,7 +222,7 @@ struct Type {
 extern Type *ty_char;
 extern Type *ty_int;
 
-Type *copy_type(Type *ty);
+Type *copy_type(const Type *ty);
 Type *pointer_to(Type *base);
 Type *array_of(Type *base, int len);
 Type *func_type(Type *ret_ty);

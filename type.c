@@ -24,7 +24,7 @@ is_integer(Type *ty)
 }
 
 Type *
-copy_type(Type *ty)
+copy_type(const Type *ty)
 {
   Type *ret = calloc(1, sizeof(*ret));
   *ret = *ty;
