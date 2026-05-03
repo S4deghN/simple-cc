@@ -70,16 +70,22 @@ _print_tree(FILE *out, const Node *node, char *prefix_buff, int prefix_cursor, i
         add = "   ";
     }
 
+    char tmp[64];
     char *node_str;
     int node_str_len;
     char *type_str = node->ty ? ty_kind_str(node->ty->kind) : "ø";
     if (node->kind == ND_NUM) {
-        char tmp[16];
         node_str = tmp;
         node_str_len = sprintf(tmp, "%d", node->val);
-    } else if (node->kind == ND_VAR || node->kind == ND_FUNCALL) {
+    } else if (node->kind == ND_VAR) {
+        node_str = tmp;
+        node_str_len = sprintf(tmp, "%.*s(%d)", node->tok->len, node->tok->str, node->obj->offset);
+    } else if (node->kind == ND_FUNCALL) {
         node_str = node->tok->str;
         node_str_len = node->tok->len;
+    } else if (node->kind == ND_MEMBER) {
+        node_str = node->member->tok->str;
+        node_str_len = node->member->tok->len;
     } else if (alt_root_name) {
         node_str = alt_root_name;
         node_str_len = strlen(alt_root_name);
