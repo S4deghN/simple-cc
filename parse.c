@@ -163,6 +163,27 @@ new_string_obj(Token *tok)
     return obj;
 }
 
+static void
+reverse_objects(Obj **objs)
+{
+    if (!*objs) return;
+
+    Obj *curr = *objs;
+    Obj *prev = NULL;
+    Obj *next = curr->next;
+    curr->next = NULL;
+
+    while (next) {
+        prev = curr;
+        curr = next;
+        next = curr->next;
+
+        curr->next = prev;
+    }
+
+    *objs = curr;
+}
+
 // ---------------------------------------
 // --- Node creators ---
 // ---------------------------------------
@@ -689,6 +710,7 @@ parse_struct_base_type(Token **tok)
 
     Type *ty = calloc(1, sizeof(*ty));
     ty->kind = TY_STRUCT;
+    ty->align = 1; // In case of empty struct!
 
     enter_scope(SC_STRUCT);
 
@@ -699,17 +721,16 @@ parse_struct_base_type(Token **tok)
     ty->members = leave_scope();
 
     // Order of the members is stack like, but we expect the offset of struct members to grow.
-    // @TODO: Use dynamic arrays for scope objects.
-    size_t size = 0;
+    reverse_objects(&ty->members);
+    size_t offset = 0;
     for (Obj *mem = ty->members; mem; mem = mem->next) {
-        size += mem->ty->size;
-    }
-    ty->size = size;
+        offset = align_to(offset, mem->ty->align);
+        mem->offset = offset;
+        offset += mem->ty->size;
 
-    for (Obj *mem = ty->members; mem; mem = mem->next) {
-        size -= mem->ty->size;
-        mem->offset = size;
+        if (mem->ty->align > ty->align) ty->align = mem->ty->align;
     }
+    ty->size = align_to(offset, ty->align);
 
 
     return ty;

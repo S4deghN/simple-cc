@@ -206,6 +206,7 @@ char *ty_kind_str(TypeKind kind);
 struct Type {
     TypeKind kind;
     int size;
+    int align;
 
     Token *ty_name;
     Token *id_name; // Must be always set. Used for searching variables in scope.

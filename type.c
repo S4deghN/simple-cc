@@ -1,7 +1,7 @@
 #include "cc.h"
 
-Type *ty_char = &(Type){ .kind = TY_CHAR, .size = 1};
-Type *ty_int = &(Type){ .kind = TY_INT, .size = 8};
+Type *ty_char = &(Type){ .kind = TY_CHAR, .size = 1, .align = 1};
+Type *ty_int = &(Type){ .kind = TY_INT, .size = 8, .align = 8};
 
 char *
 ty_kind_str(TypeKind kind)
@@ -25,6 +25,16 @@ is_integer(Type *ty)
 }
 
 Type *
+new_type(TypeKind kind, int size, int align)
+{
+    Type *ty = calloc(1, sizeof(*ty));
+    ty->kind = kind;
+    ty->size = size;
+    ty->align = align;
+    return ty;
+}
+
+Type *
 copy_type(const Type *ty)
 {
   Type *ret = calloc(1, sizeof(*ret));
@@ -35,20 +45,17 @@ copy_type(const Type *ty)
 Type *
 pointer_to(Type *base)
 {
-    Type *ty = calloc(1, sizeof(*ty));
+    Type *ty = new_type(TY_PTR, 8, 8);
     ty->id_name = base->id_name;
-    ty->kind = TY_PTR;
     ty->base = base;
-    ty->size = 8;
     return ty;
 }
 
 Type *
 array_of(Type *base, int len)
 {
-    Type *ty = copy_type(base);
-    ty->kind = TY_ARRAY;
-    ty->size = base->size * len;
+    Type *ty = new_type(TY_ARRAY, base->size * len, base->align);
+    ty->id_name = base->id_name;
     ty->base = base;
     ty->array_len = len;
     return ty;
