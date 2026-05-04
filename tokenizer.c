@@ -202,19 +202,26 @@ num_err:
 }
 
 static size_t
-skip_rel(File *file, size_t i, size_t line_nr, TokenKind *kind)
+skip_multy_char_op(File *file, size_t i, size_t line_nr, TokenKind *kind)
 {
     (void) line_nr;
     size_t len = file->len;
     char  *str = file->str;
 
-    if (i+1 >= len || str[i+1] != '=') return i;
+    if (i+1 >= len) return i;
 
-    switch (str[i]) {
-    case '=': *kind = TK_EQ;  i += 2; break;
-    case '!': *kind = TK_NE;  i += 2; break;
-    case '<': *kind = TK_LTE; i += 2; break;
-    case '>': *kind = TK_GTE; i += 2; break;
+    if (str[i+1] == '=') {
+        switch (str[i]) {
+        case '=': *kind = TK_EQ;  return i += 2;;
+        case '!': *kind = TK_NE;  return i += 2;;
+        case '<': *kind = TK_LTE; return i += 2;;
+        case '>': *kind = TK_GTE; return i += 2;;
+        }
+    }
+
+    if (str[i] == '-' && str[i+1] == '>') {
+        *kind = TK_ARROW;
+        return i += 2;
     }
 
     return i;
@@ -365,9 +372,9 @@ tokenize(File *file)
             kind = TK_ID;
             if (is_keyword(str + mark, i - mark)) kind = TK_KEYWORD;
         }
-        else if ((i = skip_num   (file, i, line_nr))           != mark) { kind = TK_NUM; }
-        else if ((i = skip_string(file, i, line_nr, &str_data)) != mark) { kind = TK_STR; }
-        else if ((i = skip_rel   (file, i, line_nr, &kind))    != mark) {}
+        else if ((i = skip_num           (file, i, line_nr))            != mark) { kind = TK_NUM; }
+        else if ((i = skip_string        (file, i, line_nr, &str_data)) != mark) { kind = TK_STR; }
+        else if ((i = skip_multy_char_op (file, i, line_nr, &kind))     != mark) {}
         else if (ispunct(str[i])) { kind = str[i++]; }
         else {
             error_at(file, i, line_nr, "Unknown Syntax!");

@@ -57,6 +57,7 @@ typedef enum {
     TK_LTE,
     TK_EQ,
     TK_NE,
+    TK_ARROW,
 } TokenKind;
 char *tk_kind_str(TokenKind kind);
 

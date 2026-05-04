@@ -582,16 +582,24 @@ find_struct_member(Token *tok, Type *ty)
 static Node *
 parse_right_unary(Token **tok, Node *left) {
     Token *mark = *tok;
-    if (skip(tok, '[')) {
+    switch (mark->kind) {
+    case '[': {
+        (*tok) = (*tok)->next;
         Node *right = parse_expr(tok, MIN_PREC);
         expect_skip(tok, ']');
         left = new_unary_node(ND_DEREF, new_add_node(left, right, mark), mark);
-    } else if (skip(tok, '.')) {
+    } break;
+    case TK_ARROW:
+        left = new_unary_node(ND_DEREF, left, mark);
+        // fallthrough
+    case '.': {
+        (*tok) = (*tok)->next;
         add_type(left);
         Obj *member = find_struct_member(expect_skip(tok, TK_ID), left->ty);
         if (!member) error_tok(left->tok, "Struct has no member called '%.*s'!", mark->next->len, mark->next->str);
         left = new_unary_node(ND_MEMBER, left, mark);
         left->member = member;
+    } break;
     }
 
     return left;
