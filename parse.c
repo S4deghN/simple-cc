@@ -19,8 +19,8 @@ struct Scope {
     Scope *next;
     Obj *objs;
     Obj *last_obj;
+    Type *tags;
 };
-Obj *nested_objs;
 
 Scope *const global = &(Scope){ .kind = SC_GLOBAL };
 Scope *scope = global;
@@ -86,6 +86,13 @@ insert_scope_obj(Scope *sc, Obj *obj)
     sc->objs = obj;
 }
 
+static void
+insert_scope_tag(Scope *sc, Type *tag)
+{
+    tag->next = sc->tags;
+    sc->tags = tag;
+}
+
 static Obj *
 find_obj_this_scope(Token *tok, Scope *sc)
 {
@@ -108,6 +115,28 @@ find_obj(Token *tok)
     return NULL;
 }
 
+static Type *
+find_tag_this_scope(Token *tag_name, Scope *sc)
+{
+    for (Type *t = sc->tags; t; t = t->next) {
+        if (t->ty_name->len == tag_name->len &&
+            strncmp(t->ty_name->str,  tag_name->str, tag_name->len) == 0) {
+            return t;
+        }
+    }
+    return NULL;
+}
+
+static Type *
+find_tag(Token *tag_name)
+{
+    for (Scope *sc = scope; sc; sc = sc->next) {
+        Type *tag = find_tag_this_scope(tag_name, sc);
+        if (tag) return tag;
+    }
+    return NULL;
+}
+
 // ---------------------------------------
 // --- Objects ---
 // ---------------------------------------
@@ -119,6 +148,10 @@ new_obj(Type *ty, Scope *scope)
 
     Obj *obj;
     bool prototype_existed = false;
+
+    if (ty->kind == TY_STRUCT) {
+        if (!ty->members && ty->ty_name) error_tok(ty->id_name, "Declaration from incomplete type!");
+    }
 
     if ((obj = find_obj_this_scope(ty->id_name, scope))) {
         if (obj->is_function && !obj->body && func_type_match(ty, obj->ty)) {
@@ -706,34 +739,56 @@ parse_statement(Token **tok)
 static Type *
 parse_struct_base_type(Token **tok)
 {
-    expect_skip(tok, '{');
+    Token *tag_name = skip(tok, TK_ID);
 
-    Type *ty = calloc(1, sizeof(*ty));
-    ty->kind = TY_STRUCT;
-    ty->align = 1; // In case of empty struct!
+    if (skip(tok, '{')) {
+        Type *ty = calloc(1, sizeof(*ty));
+        ty->kind = TY_STRUCT;
+        ty->align = 1; // In case of empty struct!
+        ty->ty_name = tag_name; // might be NULL.
 
-    enter_scope(SC_STRUCT);
+        if (tag_name) {
+            Type *tag = find_tag_this_scope(tag_name, scope);
+            if (tag) error_tok(tag_name, "Redefinition of struct");
+            insert_scope_tag(scope, ty); // Incomplete type for now.
+            // TODO: Detect nested tag name by searching all scopes up to the last SC_STRUCT kind.
+        }
 
-    while (!skip(tok, '}')) {
-        parse_declaration(tok);
+        enter_scope(SC_STRUCT);
+
+        while (!skip(tok, '}')) {
+            parse_declaration(tok);
+        }
+
+        ty->members = leave_scope();
+
+        // Order of the members is stack like, but we expect the offset of struct members to grow.
+        reverse_objects(&ty->members);
+        size_t offset = 0;
+        for (Obj *mem = ty->members; mem; mem = mem->next) {
+            offset = align_to(offset, mem->ty->align);
+            mem->offset = offset;
+            offset += mem->ty->size;
+
+            if (mem->ty->align > ty->align) ty->align = mem->ty->align;
+        }
+        ty->size = align_to(offset, ty->align);
+
+        // for (Type *tag = scope->tags; tag; tag = tag->next) {
+        //     printf("Tag: %.*s\n", tag->ty_name->len, tag->ty_name->str);
+        // }
+
+        return ty;
+    } else {
+        // for (Type *tag = scope->tags; tag; tag = tag->next) {
+        //     printf("Tag2: %.*s\n", tag->ty_name->len, tag->ty_name->str);
+        // }
+        if (!tag_name) error_tok(*tok, "Expected '{' or a struct tag");
+        Type *ty = find_tag(tag_name);
+        if (!ty) error_tok(tag_name, "Undeclared struct tag!");
+
+        return ty;
     }
-
-    ty->members = leave_scope();
-
-    // Order of the members is stack like, but we expect the offset of struct members to grow.
-    reverse_objects(&ty->members);
-    size_t offset = 0;
-    for (Obj *mem = ty->members; mem; mem = mem->next) {
-        offset = align_to(offset, mem->ty->align);
-        mem->offset = offset;
-        offset += mem->ty->size;
-
-        if (mem->ty->align > ty->align) ty->align = mem->ty->align;
-    }
-    ty->size = align_to(offset, ty->align);
-
-
-    return ty;
 }
 
 static Type *
@@ -746,13 +801,13 @@ parse_base_type(Token **tok)
         ty = parse_struct_base_type(tok);
     } else if (match_str(name, "char")) {
         ty = copy_type(ty_char);
+        ty->ty_name = name;
     } else if (match_str(name, "int")) {
         ty = copy_type(ty_int);
+        ty->ty_name = name;
     } else {
         error_tok(name, "Not a supported type name!");
     }
-
-    ty->ty_name = name;
 
     return ty;
 }
