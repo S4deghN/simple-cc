@@ -321,10 +321,11 @@ assing_locals_offset(Obj *func)
     int offset = 0;
     // NOTE: We expect that this list of locals is in stack order. i.e., last declared stack variable must be assigned the smallest (in magnitude) offset. (closest to the stack base)
     for (Obj *var = func->locals; var; var = var->next) {
-        offset -= var->ty->size;
-        var->offset = offset;
+        offset += var->ty->size;
+        offset = align_to(offset, var->ty->align);
+        var->offset = -offset;
     }
-    func->stack_size = align_to(-offset, 16);
+    func->stack_size = align_to(offset, 16);
 }
 
 static void
