@@ -92,7 +92,7 @@ gen_addr(Node *node)
             println("  lea\t\t%d(%%rbp), %%rax", node->obj->offset);
         } else {
             Token *tok = node->obj->tok;
-            println("  lea\t\t%.*s(%%rip), %%rax", tok->len, tok->str);
+            println("  lea\t\t%.*s(%%rip), %%rax", svfmt(tok));
         }
         break;
     case ND_DEREF:
@@ -200,7 +200,7 @@ gen_expr(Node *node)
             pop(call_reg64[i]);
         }
         println("  mov\t\t$0, %%rax");
-        println("  call\t\t%.*s", node->tok->len, node->tok->str);
+        println("  call\t\t%.*s", svfmt(node->tok));
         return;
     case ND_STMT_EXPR:
         for (Node *n = node->body; n; n = n->next)
@@ -304,7 +304,7 @@ gen_stmt(Node *node)
         break;
     case ND_RETURN:
         gen_expr(node->lhs);
-        println("  jmp\t\t.L.return.%.*s", current_fn->tok->len, current_fn->tok->str);
+        println("  jmp\t\t.L.return.%.*s", svfmt(current_fn->tok));
         break;
     case ND_EXPR_STMT:
         gen_expr(node->lhs);
@@ -339,8 +339,8 @@ emit_data(Obj *prog)
         if (tok->kind == TK_STR) new_unique_name(&tok);
 
         println("  .data");
-        println("  .globl %.*s", tok->len, tok->str);
-        println("%.*s:", tok->len, tok->str);
+        println("  .globl %.*s", svfmt(tok));
+        println("%.*s:", svfmt(tok));
         if (var->init_data) {
             for (int i = 0; i < var->ty->size; i++)
                 println("  .byte %d", var->init_data[i]);
@@ -361,9 +361,9 @@ emit_text(Obj *prog)
         assing_locals_offset(fn);
 
         Token *name = fn->tok;
-        println("  .global %.*s", name->len, name->str);
+        println("  .global %.*s", svfmt(name));
         println("  .text");
-        println("%.*s:", name->len, name->str);
+        println("%.*s:", svfmt(name));
 
         print_tree(output_file, fn->body, "  // ");
 
@@ -386,7 +386,7 @@ emit_text(Obj *prog)
         assert(depth == 0);
 
         // epilogue
-        println(".L.return.%.*s:", name->len, name->str);
+        println(".L.return.%.*s:", svfmt(name));
         println("  mov\t\t%%rbp, %%rsp");
         println("  pop\t\t%%rbp");
 

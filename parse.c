@@ -597,7 +597,7 @@ parse_right_unary(Token **tok, Node *left) {
         (*tok) = (*tok)->next;
         add_type(left);
         Obj *member = find_struct_member(expect_skip(tok, TK_ID), left->ty);
-        if (!member) error_tok(left->tok, "Struct has no member called '%.*s'!", mark->next->len, mark->next->str);
+        if (!member) error_tok(left->tok, "Struct has no member called '%.*s'!", svfmt(mark->next));
         left = new_unary_node(ND_MEMBER, left, mark);
         left->member = member;
     } break;
@@ -800,7 +800,7 @@ parse_struct_base_type(Token **tok, TypeKind kind)
         if (!tag_name) error_tok(*tok, "Expected '{' or a %s tag", ty_kind_str(kind));
         Type *ty = find_tag(tag_name);
         if (!ty) error_tok(tag_name, "Undeclared %s tag!", ty_kind_str(kind));
-        if (ty->kind != kind) error_tok(tag_name, "Tryin to use %s %.*s as %s!", ty_kind_str(ty->kind), ty->ty_name->len, ty->ty_name->str, ty_kind_str(kind));
+        if (ty->kind != kind) error_tok(tag_name, "Tryin to use %s %.*s as %s!", ty_kind_str(ty->kind), svfmt(ty->ty_name), ty_kind_str(kind));
         return ty;
     }
 }

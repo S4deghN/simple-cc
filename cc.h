@@ -18,6 +18,8 @@
 #define swap(a, b) do { typeof(a) tmp = (a); (a) = (b); (b) = tmp; } while(0)
 #define double_case(a, b) ((((int)(a)) << 8) | (int)(b))
 
+#define svfmt(a) (a)->len, (a)->str
+
 typedef struct {
     char *path;
     char *str;
