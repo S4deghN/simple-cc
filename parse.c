@@ -352,6 +352,7 @@ is_typename(Token *tok)
 {
     return tok->kind == TK_KEYWORD && (
         match_str(tok, "struct") ||
+        match_str(tok, "union") ||
         match_str(tok, "char") ||
         match_str(tok, "int")
         );
@@ -570,7 +571,7 @@ parse_funcall(Token **tok, Token *mark)
 static Obj *
 find_struct_member(Token *tok, Type *ty)
 {
-    if (ty->kind != TY_STRUCT) error_tok(tok, "Trying to member access a non-struct type!");
+    if (ty->kind != TY_STRUCT && ty->kind != TY_UNION) error_tok(tok, "Trying to member access a non-struct type!");
     for (Obj *m = ty->members; m; m = m->next) {
         if (m->tok->len == tok->len && strncmp(m->tok->str, tok->str, tok->len) == 0) {
             return m;
@@ -745,20 +746,23 @@ parse_statement(Token **tok)
 }
 
 static Type *
-parse_struct_base_type(Token **tok)
+parse_struct_base_type(Token **tok, TypeKind kind)
 {
+    assert(kind == TY_STRUCT || kind == TY_UNION);
+
     Token *tag_name = skip(tok, TK_ID);
 
     if (skip(tok, '{')) {
         Type *ty = calloc(1, sizeof(*ty));
-        ty->kind = TY_STRUCT;
+        ty->kind = kind;
         ty->align = 1; // In case of empty struct!
         ty->ty_name = tag_name; // might be NULL.
 
         if (tag_name) {
             Type *tag = find_tag_this_scope(tag_name, scope);
-            if (tag) error_tok(tag_name, "Redefinition of struct");
+            if (tag) error_tok(tag_name, "Redefinition of struct/union tag");
             insert_scope_tag(scope, ty); // Incomplete type for now.
+
             // TODO: Detect nested tag name by searching all scopes up to the last SC_STRUCT kind.
         }
 
@@ -771,30 +775,32 @@ parse_struct_base_type(Token **tok)
         ty->members = leave_scope();
 
         // Order of the members is stack like, but we expect the offset of struct members to grow.
-        reverse_objects(&ty->members);
-        size_t offset = 0;
-        for (Obj *mem = ty->members; mem; mem = mem->next) {
-            offset = align_to(offset, mem->ty->align);
-            mem->offset = offset;
-            offset += mem->ty->size;
+        if (kind == TY_STRUCT) {
+            reverse_objects(&ty->members);
+            size_t offset = 0;
+            for (Obj *mem = ty->members; mem; mem = mem->next) {
+                offset = align_to(offset, mem->ty->align);
+                mem->offset = offset;
+                offset += mem->ty->size;
 
-            if (mem->ty->align > ty->align) ty->align = mem->ty->align;
+                if (mem->ty->align > ty->align) ty->align = mem->ty->align;
+            }
+            ty->size = align_to(offset, ty->align);
+        } else {
+            // Union member offsets are already zero, because we expect zero initialization.
+            for (Obj *mem = ty->members; mem; mem = mem->next) {
+                if (mem->ty->align > ty->align) ty->align = mem->ty->align;
+                if (mem->ty->size  > ty->size)  ty->size  = mem->ty->size;
+            }
+            ty->size = align_to(ty->size, ty->align);
         }
-        ty->size = align_to(offset, ty->align);
-
-        // for (Type *tag = scope->tags; tag; tag = tag->next) {
-        //     printf("Tag: %.*s\n", tag->ty_name->len, tag->ty_name->str);
-        // }
 
         return ty;
     } else {
-        // for (Type *tag = scope->tags; tag; tag = tag->next) {
-        //     printf("Tag2: %.*s\n", tag->ty_name->len, tag->ty_name->str);
-        // }
-        if (!tag_name) error_tok(*tok, "Expected '{' or a struct tag");
+        if (!tag_name) error_tok(*tok, "Expected '{' or a %s tag", ty_kind_str(kind));
         Type *ty = find_tag(tag_name);
-        if (!ty) error_tok(tag_name, "Undeclared struct tag!");
-
+        if (!ty) error_tok(tag_name, "Undeclared %s tag!", ty_kind_str(kind));
+        if (ty->kind != kind) error_tok(tag_name, "Tryin to use %s %.*s as %s!", ty_kind_str(ty->kind), ty->ty_name->len, ty->ty_name->str, ty_kind_str(kind));
         return ty;
     }
 }
@@ -806,7 +812,9 @@ parse_base_type(Token **tok)
     Type *ty;
 
     if (match_str(name, "struct")) {
-        ty = parse_struct_base_type(tok);
+        ty = parse_struct_base_type(tok, TY_STRUCT);
+    } else if (match_str(name, "union")) {
+        ty = parse_struct_base_type(tok, TY_UNION);
     } else if (match_str(name, "char")) {
         ty = copy_type(ty_char);
         ty->ty_name = name;

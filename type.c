@@ -10,7 +10,8 @@ ty_kind_str(TypeKind kind)
         case TY_CHAR: return "CHAR";
         case TY_INT: return "INT";
         case TY_PTR: return "PTR";
-        case TY_STRUCT: return "STRUCT";
+        case TY_STRUCT: return "struct";
+        case TY_UNION: return "union";
         case TY_FUNC: return "FUNC";
         case TY_ARRAY: return "ARRAY";
         default:
