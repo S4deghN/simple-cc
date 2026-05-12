@@ -114,7 +114,7 @@ gen_addr(Node *node)
 static void
 load(Type *ty)
 {
-    if (ty->kind == TY_ARRAY) {
+    if (ty->kind == TY_ARRAY || ty->kind == TY_STRUCT || ty->kind == TY_UNION) {
         // An array's value is its address which is expected to be already loaded
         // into %rax by gen_addr.
         return;
@@ -136,6 +136,15 @@ static void
 store(Type *ty)
 {
     pop("%rdi");
+
+    if (ty->kind == TY_STRUCT || ty->kind == TY_UNION) {
+        for (int i = 0; i < ty->size; ++i) {
+            println("  mov\t\t%d(%%rax), %%r8b", i);
+            println("  mov\t\t%%r8b, %d(%%rdi)", i);
+        }
+        return;
+    }
+
     switch (ty->size) {
     case 1:
         println("  mov\t\t%%al, (%%rdi)");
